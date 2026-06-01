@@ -7,13 +7,26 @@ interface Props { points: FlightPoint[] }
 interface Anomaly { key: string; time: string; label: string; value: string; severity: "warn" | "crit" }
 interface CASEvent { message: string; firstTime: string; count: number }
 
-// ── Thresholds (Lycoming / typical GA) ─────────────────────────────────
+// ── Thresholds — exact from aircraft POH ────────────────────────────────
 const THR = {
-  oilTWarn: 230, oilTCrit: 245,        // °F
-  oilPLow: 25, oilPWarn: 55,           // PSI
-  rpmWarn: 2500, rpmCrit: 2700,        // RPM
-  iasWarn: 145, iasCrit: 165,          // kt Vno / Vne
-  voltWarn: 12.5, voltCrit: 12.0,      // V
+  // Oil Temperature (°F): green 100-245, red outside
+  oilTColdCrit: 100, oilTHotCrit: 245,
+  // Oil Pressure (PSI): red <25, yellow 25-55 & 95-115, green 55-95, red >115
+  oilPRedLo: 25, oilPYellowLo: 55, oilPGreenHi: 95, oilPYellowHi: 115, oilPRedHi: 115,
+  // RPM: green 700-2600, red above 2600
+  rpmCrit: 2600,
+  // IAS (kt) — Vno / Vne (not in POH table, kept from prior)
+  iasWarn: 145, iasCrit: 165,
+  // Volts: green 12.4-15.5, yellow below 12.4, red above 15.5
+  voltLowWarn: 12.4, voltHighCrit: 15.5,
+  // CHT (°F): yellow 100-200, green 200-465, red above 465
+  chtWarnLo: 100, chtWarnHi: 200, chtCrit: 465,
+  // EGT (°F): green 1100-1550, red above 1550
+  egtGreenLo: 1100, egtCrit: 1550,
+  // MAP ("Hg): green 11-32, red above 32
+  mapCrit: 32,
+  // Amps: green 1-60, yellow below 0
+  ampsWarn: 0,
 };
 
 // ── Analysis ────────────────────────────────────────────────────────────
@@ -35,17 +48,36 @@ function analyze(pts: FlightPoint[]) {
       }
     }
 
+    const cht = Math.max(p.e1Cht1 ?? 0, p.e1Cht2 ?? 0, p.e1Cht3 ?? 0, p.e1Cht4 ?? 0, p.e1Cht5 ?? 0, p.e1Cht6 ?? 0);
+    const egt = Math.max(p.e1Egt1 ?? 0, p.e1Egt2 ?? 0, p.e1Egt3 ?? 0, p.e1Egt4 ?? 0, p.e1Egt5 ?? 0, p.e1Egt6 ?? 0);
+    const oilT = p.e1OilT ?? 0;
+    const oilP = p.e1OilP ?? 999;
+    const map = p.e1Map ?? 0;
+
     const checks: [string, boolean, string, string, "warn" | "crit"][] = [
-      ["oilTCrit", (p.e1OilT ?? 0) > THR.oilTCrit, "OVERTEMP ACEITE", `${p.e1OilT?.toFixed(0)}°F`, "crit"],
-      ["oilTWarn", (p.e1OilT ?? 0) > THR.oilTWarn, "Temp Aceite Alta", `${p.e1OilT?.toFixed(0)}°F`, "warn"],
-      ["oilPCrit", (p.e1OilP ?? 999) < THR.oilPLow && (p.e1OilP ?? 999) > 0, "BAJA PRESIÓN ACEITE", `${p.e1OilP?.toFixed(0)} PSI`, "crit"],
-      ["oilPWarn", (p.e1OilP ?? 999) < THR.oilPWarn && (p.e1OilP ?? 999) > 0, "Presión Aceite Baja", `${p.e1OilP?.toFixed(0)} PSI`, "warn"],
-      ["rpmCrit", (p.e1Rpm ?? 0) > THR.rpmCrit, "SOBREVELOCIDAD RPM", `${p.e1Rpm?.toFixed(0)} RPM`, "crit"],
-      ["rpmWarn", (p.e1Rpm ?? 0) > THR.rpmWarn, "RPM Elevado", `${p.e1Rpm?.toFixed(0)} RPM`, "warn"],
-      ["iasCrit", (p.ias ?? 0) > THR.iasCrit, "EXCESO VELOCIDAD (Vne)", `${p.ias?.toFixed(0)} kt`, "crit"],
-      ["iasWarn", (p.ias ?? 0) > THR.iasWarn, "Velocidad > Vno", `${p.ias?.toFixed(0)} kt`, "warn"],
-      ["voltCrit", (p.volts1 ?? 99) < THR.voltCrit && (p.volts1 ?? 99) > 0, "CAÍDA VOLTAJE", `${p.volts1?.toFixed(1)} V`, "crit"],
-      ["voltWarn", (p.volts1 ?? 99) < THR.voltWarn && (p.volts1 ?? 99) > 0, "Voltaje Bajo", `${p.volts1?.toFixed(1)} V`, "warn"],
+      // Oil Temperature
+      ["oilTHot",  oilT > THR.oilTHotCrit,                          "OVERTEMP ACEITE",        `${oilT.toFixed(0)}°F`,     "crit"],
+      ["oilTCold", oilT > 0 && oilT < THR.oilTColdCrit,             "Aceite Frío",             `${oilT.toFixed(0)}°F`,     "warn"],
+      // Oil Pressure
+      ["oilPLo",   oilP < THR.oilPRedLo && oilP > 0,                "BAJA PRESIÓN ACEITE",    `${oilP.toFixed(0)} PSI`,   "crit"],
+      ["oilPLoW",  oilP >= THR.oilPRedLo && oilP < THR.oilPYellowLo,"Presión Aceite Baja",    `${oilP.toFixed(0)} PSI`,   "warn"],
+      ["oilPHiW",  oilP > THR.oilPGreenHi && oilP <= THR.oilPYellowHi,"Presión Aceite Alta",  `${oilP.toFixed(0)} PSI`,   "warn"],
+      ["oilPHi",   oilP > THR.oilPRedHi,                             "ALTA PRESIÓN ACEITE",   `${oilP.toFixed(0)} PSI`,   "crit"],
+      // RPM
+      ["rpmCrit",  (p.e1Rpm ?? 0) > THR.rpmCrit,                    "SOBRERREVOLUCIÓN",       `${p.e1Rpm?.toFixed(0)} RPM`, "crit"],
+      // IAS
+      ["iasCrit",  (p.ias ?? 0) > THR.iasCrit,                      "EXCESO VEL (Vne)",       `${p.ias?.toFixed(0)} kt`,  "crit"],
+      ["iasWarn",  (p.ias ?? 0) > THR.iasWarn,                      "Velocidad > Vno",        `${p.ias?.toFixed(0)} kt`,  "warn"],
+      // Volts
+      ["voltHi",   (p.volts1 ?? 0) > THR.voltHighCrit,              "SOBREVOLTS",             `${p.volts1?.toFixed(1)} V`, "crit"],
+      ["voltLow",  (p.volts1 ?? 99) < THR.voltLowWarn && (p.volts1 ?? 99) > 0, "Voltaje Bajo", `${p.volts1?.toFixed(1)} V`, "warn"],
+      // CHT
+      ["chtCrit",  cht > THR.chtCrit,                                "OVERTEMP CULATA",        `${cht.toFixed(0)}°F`,      "crit"],
+      ["chtWarn",  cht > 0 && cht < THR.chtWarnHi,                   "CHT Fría",               `${cht.toFixed(0)}°F`,      "warn"],
+      // EGT
+      ["egtCrit",  egt > THR.egtCrit,                                "OVERTEMP EGT",           `${egt.toFixed(0)}°F`,      "crit"],
+      // MAP
+      ["mapCrit",  map > THR.mapCrit,                                 "EXCESO PRESIÓN MÚLTIPLE",`${map.toFixed(1)}"`,       "crit"],
     ];
 
     for (const [key, active, label, value, severity] of checks) {
@@ -279,9 +311,9 @@ function HSI({ hdg }: { hdg: number }) {
 }
 
 // ── Arc Gauge ───────────────────────────────────────────────────────────
-function ArcGauge({ label, value, min, max, unit, green, yellow, red, dec = 0 }: {
+function ArcGauge({ label, value, min, max, unit, green, yellows, red, dec = 0 }: {
   label: string; value: number; min: number; max: number; unit: string; dec?: number;
-  green?: [number, number]; yellow?: [number, number]; red?: [number, number][];
+  green?: [number, number]; yellows?: [number, number][]; red?: [number, number][];
 }) {
   const S = 108, cx = 54, cy = 60, r = 42;
   const A0 = 135, SWEEP = 270;
@@ -297,11 +329,13 @@ function ArcGauge({ label, value, min, max, unit, green, yellow, red, dec = 0 }:
     return `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`;
   };
 
-  const pct = Math.max(0, Math.min(1, (value - min) / (max - min)));
+  const norm = (v: number) => Math.max(0, Math.min(1, (v - min) / (max - min)));
+  const pct = norm(value);
   const [nx, ny] = toXY(pct);
 
-  const isRed = red?.some(([lo, hi]) => value < lo || value > hi);
-  const isYellow = !isRed && yellow && (value < yellow[0] || value > yellow[1]);
+  // Needle color: red if in any red band, yellow if in any yellow band, else green
+  const isRed = red?.some(([lo, hi]) => value >= lo && value <= hi);
+  const isYellow = !isRed && yellows?.some(([lo, hi]) => value >= lo && value <= hi);
   const vColor = isRed ? "#ff3333" : isYellow ? "#ffaa00" : "#00cc66";
 
   const bgP1 = toXY(0), bgP2 = toXY(1);
@@ -309,12 +343,19 @@ function ArcGauge({ label, value, min, max, unit, green, yellow, red, dec = 0 }:
   return (
     <div style={{ textAlign: "center", width: S }}>
       <svg width={S} height={80} viewBox={`0 0 ${S} 80`}>
+        {/* Track */}
         <path d={`M ${bgP1[0]} ${bgP1[1]} A ${r} ${r} 0 1 1 ${bgP2[0]} ${bgP2[1]}`} fill="none" stroke="#0f1e30" strokeWidth={7} />
-        {green && <path d={arcD(Math.max(0, (green[0] - min) / (max - min)), Math.min(1, (green[1] - min) / (max - min)))} fill="none" stroke="#00cc66" strokeWidth={6} />}
-        {yellow && <path d={arcD(Math.max(0, (yellow[0] - min) / (max - min)), Math.min(1, (yellow[1] - min) / (max - min)))} fill="none" stroke="#ffaa00" strokeWidth={5} strokeDasharray="4 3" />}
-        {red?.map(([lo, hi], i) => (
-          <path key={i} d={arcD(Math.max(0, (lo - min) / (max - min)), Math.min(1, (hi - min) / (max - min)))} fill="none" stroke="#ff3333" strokeWidth={6} />
+        {/* Green arc */}
+        {green && <path d={arcD(norm(green[0]), norm(green[1]))} fill="none" stroke="#00cc66" strokeWidth={6} />}
+        {/* Yellow arcs (multiple bands supported) */}
+        {yellows?.map(([lo, hi], i) => (
+          <path key={i} d={arcD(norm(lo), norm(hi))} fill="none" stroke="#ffaa00" strokeWidth={5} strokeDasharray="4 3" />
         ))}
+        {/* Red arcs */}
+        {red?.map(([lo, hi], i) => (
+          <path key={i} d={arcD(norm(lo), norm(hi))} fill="none" stroke="#ff3333" strokeWidth={6} />
+        ))}
+        {/* Needle */}
         <line x1={cx} y1={cy} x2={nx} y2={ny} stroke={vColor} strokeWidth={2.5} strokeLinecap="round" />
         <circle cx={cx} cy={cy} r={3.5} fill={vColor} />
         <text x={cx} y={cy + 18} fill={vColor} fontSize={13} textAnchor="middle" fontFamily="monospace" fontWeight="bold">
@@ -396,11 +437,15 @@ export function FlightReplay({ points }: Props) {
   const ias = p.ias ?? 0;
   const alt = p.altGps ?? p.altP ?? 0;
   const vspd = p.vspd ?? 0;
-  const rpm = p.e1Rpm ?? 0;
-  const oilP = p.e1OilP ?? 0;
-  const oilT = p.e1OilT ?? 0;
+  const rpm   = p.e1Rpm   ?? 0;
+  const map   = p.e1Map   ?? 0;
+  const oilP  = p.e1OilP  ?? 0;
+  const oilT  = p.e1OilT  ?? 0;
   const fflow = p.e1Fflow ?? 0;
-  const volts = p.volts1 ?? 0;
+  const volts = p.volts1  ?? 0;
+  const amps  = p.amps1   ?? 0;
+  const cht   = Math.max(p.e1Cht1 ?? 0, p.e1Cht2 ?? 0, p.e1Cht3 ?? 0, p.e1Cht4 ?? 0, p.e1Cht5 ?? 0, p.e1Cht6 ?? 0);
+  const egt   = Math.max(p.e1Egt1 ?? 0, p.e1Egt2 ?? 0, p.e1Egt3 ?? 0, p.e1Egt4 ?? 0, p.e1Egt5 ?? 0, p.e1Egt6 ?? 0);
 
   const activeCAS = p.alerts
     ? p.alerts.split("/").map(s => s.trim()).filter(Boolean)
@@ -459,20 +504,39 @@ export function FlightReplay({ points }: Props) {
         {/* ── RIGHT: Engine + CAS + Analysis ── */}
         <div style={{ display: "flex", flexDirection: "column" }}>
 
-          {/* Engine gauges */}
+          {/* Engine gauges — 2 rows × 4, limits from aircraft POH */}
           <div style={{ padding: 12, ...borderBottom }}>
             <div style={sectionLabel}>ENGINE</div>
-            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 4 }}>
+            {/* Row 1: RPM · MAP · OIL P · OIL T */}
+            <div style={{ display: "flex", justifyContent: "center", gap: 2, marginBottom: 4 }}>
               <ArcGauge label="RPM" value={rpm} min={0} max={3000} unit="RPM"
-                green={[500, 2500]} yellow={[2500, 2700]} red={[[2700, 3000]]} />
-              <ArcGauge label="OIL P" value={oilP} min={0} max={120} unit="PSI"
-                green={[55, 90]} yellow={[25, 55]} red={[[0, 25], [100, 120]]} />
+                green={[700, 2600]} red={[[2600, 3000]]} />
+              <ArcGauge label="MAP" value={map} min={0} max={40} unit='"Hg'
+                green={[11, 32]} red={[[32, 40]]} dec={1} />
+              <ArcGauge label="OIL P" value={oilP} min={0} max={130} unit="PSI"
+                green={[55, 95]}
+                yellows={[[25, 55], [95, 115]]}
+                red={[[0, 25], [115, 130]]} />
               <ArcGauge label="OIL T" value={oilT} min={50} max={300} unit="°F"
-                green={[100, 230]} yellow={[230, 245]} red={[[245, 300]]} />
-              <ArcGauge label="F.FLOW" value={fflow} min={0} max={15} unit="GPH"
-                green={[0, 12]} yellow={[12, 13]} red={[[13, 15]]} dec={1} />
-              <ArcGauge label="VOLTS" value={volts} min={10} max={16} unit="V"
-                green={[12.5, 14.5]} yellow={[12, 12.5]} red={[[10, 12], [15, 16]]} dec={1} />
+                green={[100, 245]}
+                red={[[50, 100], [245, 300]]} />
+            </div>
+            {/* Row 2: CHT max · EGT max · VOLTS · AMPS */}
+            <div style={{ display: "flex", justifyContent: "center", gap: 2 }}>
+              <ArcGauge label="CHT" value={cht} min={0} max={550} unit="°F"
+                yellows={[[100, 200]]}
+                green={[200, 465]}
+                red={[[465, 550]]} />
+              <ArcGauge label="EGT" value={egt} min={800} max={1700} unit="°F"
+                green={[1100, 1550]}
+                red={[[1550, 1700]]} />
+              <ArcGauge label="VOLTS" value={volts} min={10} max={17} unit="V"
+                green={[12.4, 15.5]}
+                yellows={[[10, 12.4]]}
+                red={[[15.5, 17]]} dec={1} />
+              <ArcGauge label="AMPS" value={amps} min={-10} max={70} unit="A"
+                green={[1, 60]}
+                yellows={[[-10, 0]]} />
             </div>
           </div>
 
