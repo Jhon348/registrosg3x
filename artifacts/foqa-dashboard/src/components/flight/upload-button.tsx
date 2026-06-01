@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, startTransition } from "react";
 import { getListFlightsQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { UploadCloud, Loader2 } from "lucide-react";
@@ -30,11 +30,13 @@ export function UploadButton() {
         throw new Error(body.error || `Upload failed (${res.status})`);
       }
 
-      toast({
-        title: "Log Uploaded",
-        description: `Successfully processed ${file.name}`,
+      startTransition(() => {
+        toast({
+          title: "Log Uploaded",
+          description: `Successfully processed ${file.name}`,
+        });
+        queryClient.invalidateQueries({ queryKey: getListFlightsQueryKey() });
       });
-      queryClient.invalidateQueries({ queryKey: getListFlightsQueryKey() });
     } catch (err: any) {
       toast({
         title: "Upload Failed",
@@ -61,11 +63,17 @@ export function UploadButton() {
         disabled={isPending}
         className="bg-primary text-primary-foreground hover:bg-primary/90 font-mono"
       >
-        {isPending ? (
-          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-        ) : (
-          <UploadCloud className="w-4 h-4 mr-2" />
-        )}
+        {/* Both icons always in DOM — CSS visibility avoids React insertBefore on sibling swap */}
+        <UploadCloud
+          aria-hidden={isPending}
+          style={{ display: isPending ? "none" : undefined }}
+          className="w-4 h-4 mr-2"
+        />
+        <Loader2
+          aria-hidden={!isPending}
+          style={{ display: isPending ? undefined : "none" }}
+          className="w-4 h-4 mr-2 animate-spin"
+        />
         UPLOAD G3X LOG
       </Button>
     </div>
