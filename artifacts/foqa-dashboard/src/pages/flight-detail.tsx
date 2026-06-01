@@ -2,7 +2,6 @@ import { useParams, Link } from "wouter";
 import { useGetFlight, getGetFlightQueryKey, useGetFlightPoints, getGetFlightPointsQueryKey, FlightPoint } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout/layout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FlightMap } from "@/components/flight/flight-map";
 import { FlightTelemetryCharts } from "@/components/flight/flight-telemetry-charts";
 import { FlightEngineCharts } from "@/components/flight/flight-engine-charts";
 import { FlightReplay } from "@/components/flight/flight-replay";
@@ -129,34 +128,27 @@ export default function FlightDetail() {
           <StatBox label="FUEL USED" value={flight.fuelUsed?.toFixed(1)} unit="GAL" />
         </div>
 
-        {/* Tabs — all TabsContent always in the DOM to avoid concurrent-render insertBefore conflicts */}
-        <Tabs defaultValue="map" className="w-full">
+        <Tabs defaultValue="replay" className="w-full">
           <TabsList className="w-full justify-start bg-card border-b border-border rounded-none p-0 h-auto">
-            <TabsTrigger value="map" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary px-8 py-4 font-mono uppercase text-sm tracking-wider">
-              Flight Path
+            <TabsTrigger value="replay" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary px-8 py-4 font-mono uppercase text-sm tracking-wider">
+              Replay G3X
             </TabsTrigger>
             <TabsTrigger value="telemetry" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary px-8 py-4 font-mono uppercase text-sm tracking-wider">
-              Telemetry
+              Telemetría
             </TabsTrigger>
             <TabsTrigger value="engine" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary px-8 py-4 font-mono uppercase text-sm tracking-wider">
-              Engine
-            </TabsTrigger>
-            <TabsTrigger value="replay" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary px-8 py-4 font-mono uppercase text-sm tracking-wider">
-              Replay
+              Motor
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="map" className="mt-6 m-0 focus-visible:outline-none">
-            {loadingPoints ? <TabLoading /> : <FlightMap points={safePoints} />}
+          <TabsContent value="replay" className="mt-6 m-0 focus-visible:outline-none">
+            {loadingPoints ? <TabLoading /> : <FlightReplay points={safePoints} />}
           </TabsContent>
           <TabsContent value="telemetry" className="mt-6 m-0 focus-visible:outline-none">
             {loadingPoints ? <TabLoading /> : <FlightTelemetryCharts points={safePoints} />}
           </TabsContent>
           <TabsContent value="engine" className="mt-6 m-0 focus-visible:outline-none">
             {loadingPoints ? <TabLoading /> : <FlightEngineCharts points={safePoints} />}
-          </TabsContent>
-          <TabsContent value="replay" className="mt-6 m-0 focus-visible:outline-none">
-            {loadingPoints ? <TabLoading /> : <FlightReplay points={safePoints} />}
           </TabsContent>
         </Tabs>
       </div>

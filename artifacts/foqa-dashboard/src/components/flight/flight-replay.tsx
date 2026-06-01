@@ -1,240 +1,546 @@
-import { useState, useEffect } from "react";
-import { Map, Marker } from "pigeon-maps";
+import { useState, useEffect, useMemo } from "react";
 import { FlightPoint } from "@workspace/api-client-react";
-import { Play, Pause, SkipBack } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 
-interface Props {
-  points: FlightPoint[];
-}
+// ── Types ───────────────────────────────────────────────────────────────
+interface Props { points: FlightPoint[] }
+interface Anomaly { key: string; time: string; label: string; value: string; severity: "warn" | "crit" }
+interface CASEvent { message: string; firstTime: string; count: number }
 
-function osm(x: number, y: number, z: number) {
-  return `https://basemaps.cartocdn.com/dark_all/${z}/${x}/${y}.png`;
-}
+// ── Thresholds (Lycoming / typical GA) ─────────────────────────────────
+const THR = {
+  oilTWarn: 230, oilTCrit: 245,        // °F
+  oilPLow: 25, oilPWarn: 55,           // PSI
+  rpmWarn: 2500, rpmCrit: 2700,        // RPM
+  iasWarn: 145, iasCrit: 165,          // kt Vno / Vne
+  voltWarn: 12.5, voltCrit: 12.0,      // V
+};
 
-export function FlightReplay({ points }: Props) {
-  const validPoints = points.filter(
-    (p) => p.lat != null && p.lon != null
-  ) as (FlightPoint & { lat: number; lon: number })[];
+// ── Analysis ────────────────────────────────────────────────────────────
+function analyze(pts: FlightPoint[]) {
+  const anomalies: Anomaly[] = [];
+  const casMap = new Map<string, CASEvent>();
+  const triggered: Record<string, boolean> = {};
 
-  const [index, setIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [speed, setSpeed] = useState(1);
+  for (const p of pts) {
+    const t = p.lclTime?.split(" ")[1] ?? "--:--";
 
-  useEffect(() => {
-    if (!isPlaying) return;
-    const interval = setInterval(() => {
-      setIndex((i) => {
-        if (i >= validPoints.length - 1) {
-          setIsPlaying(false);
-          return i;
-        }
-        return Math.min(i + Math.max(1, Math.floor(speed)), validPoints.length - 1);
-      });
-    }, 100);
-    return () => clearInterval(interval);
-  }, [isPlaying, speed, validPoints.length]);
+    if (p.alerts) {
+      for (const raw of p.alerts.split("/")) {
+        const msg = raw.trim();
+        if (!msg) continue;
+        const existing = casMap.get(msg);
+        if (existing) existing.count++;
+        else casMap.set(msg, { message: msg, firstTime: t, count: 1 });
+      }
+    }
 
-  if (validPoints.length === 0) {
-    return (
-      <div className="h-[400px] flex items-center justify-center bg-card text-muted-foreground border border-border rounded-md font-mono text-sm uppercase">
-        No GPS data for replay
-      </div>
-    );
+    const checks: [string, boolean, string, string, "warn" | "crit"][] = [
+      ["oilTCrit", (p.e1OilT ?? 0) > THR.oilTCrit, "OVERTEMP ACEITE", `${p.e1OilT?.toFixed(0)}°F`, "crit"],
+      ["oilTWarn", (p.e1OilT ?? 0) > THR.oilTWarn, "Temp Aceite Alta", `${p.e1OilT?.toFixed(0)}°F`, "warn"],
+      ["oilPCrit", (p.e1OilP ?? 999) < THR.oilPLow && (p.e1OilP ?? 999) > 0, "BAJA PRESIÓN ACEITE", `${p.e1OilP?.toFixed(0)} PSI`, "crit"],
+      ["oilPWarn", (p.e1OilP ?? 999) < THR.oilPWarn && (p.e1OilP ?? 999) > 0, "Presión Aceite Baja", `${p.e1OilP?.toFixed(0)} PSI`, "warn"],
+      ["rpmCrit", (p.e1Rpm ?? 0) > THR.rpmCrit, "SOBREVELOCIDAD RPM", `${p.e1Rpm?.toFixed(0)} RPM`, "crit"],
+      ["rpmWarn", (p.e1Rpm ?? 0) > THR.rpmWarn, "RPM Elevado", `${p.e1Rpm?.toFixed(0)} RPM`, "warn"],
+      ["iasCrit", (p.ias ?? 0) > THR.iasCrit, "EXCESO VELOCIDAD (Vne)", `${p.ias?.toFixed(0)} kt`, "crit"],
+      ["iasWarn", (p.ias ?? 0) > THR.iasWarn, "Velocidad > Vno", `${p.ias?.toFixed(0)} kt`, "warn"],
+      ["voltCrit", (p.volts1 ?? 99) < THR.voltCrit && (p.volts1 ?? 99) > 0, "CAÍDA VOLTAJE", `${p.volts1?.toFixed(1)} V`, "crit"],
+      ["voltWarn", (p.volts1 ?? 99) < THR.voltWarn && (p.volts1 ?? 99) > 0, "Voltaje Bajo", `${p.volts1?.toFixed(1)} V`, "warn"],
+    ];
+
+    for (const [key, active, label, value, severity] of checks) {
+      if (active && !triggered[key]) {
+        anomalies.push({ key, time: t, label, value, severity });
+      }
+      triggered[key] = active;
+    }
   }
 
-  const currentPoint = validPoints[index];
-  const progress =
-    validPoints.length > 1 ? (index / (validPoints.length - 1)) * 100 : 0;
+  return { anomalies, casEvents: Array.from(casMap.values()) };
+}
 
-  const lats = validPoints.map((p) => p.lat);
-  const lons = validPoints.map((p) => p.lon);
-  const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2;
-  const centerLon = (Math.min(...lons) + Math.max(...lons)) / 2;
-  const span = Math.max(
-    Math.max(...lats) - Math.min(...lats),
-    Math.max(...lons) - Math.min(...lons)
-  );
-  const zoom = span < 0.05 ? 13 : span < 0.2 ? 11 : span < 1 ? 9 : 7;
-
-  const chtMax = Math.max(
-    currentPoint.e1Cht1 ?? 0,
-    currentPoint.e1Cht2 ?? 0,
-    currentPoint.e1Cht3 ?? 0,
-    currentPoint.e1Cht4 ?? 0,
-    currentPoint.e1Cht5 ?? 0,
-    currentPoint.e1Cht6 ?? 0
-  );
-
-  const tracePoints = validPoints.slice(0, index + 1);
+// ── Attitude Indicator ──────────────────────────────────────────────────
+function AttitudeIndicator({ pitch, roll }: { pitch: number; roll: number }) {
+  const cx = 100, cy = 100, r = 97;
+  const PPD = 4.2; // pixels per degree
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div className="lg:col-span-2 space-y-4">
-        <div className="h-[450px] w-full rounded-md overflow-hidden border border-border">
-          <Map
-            provider={osm}
-            center={[centerLat, centerLon]}
-            zoom={zoom}
-            attribution={false}
-          >
-            {/* Ghost full path */}
-            <ReplayPath points={validPoints} color="#1e3a5f" opacity={0.5} />
-            {/* Active trace */}
-            <ReplayPath points={tracePoints} color="#0ea5e9" opacity={1} />
-            {/* Current position */}
-            <Marker
-              anchor={[currentPoint.lat, currentPoint.lon]}
-              width={16}
-            >
-              <div
-                style={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: "50%",
-                  background: "#0ea5e9",
-                  border: "2px solid #fff",
-                  boxShadow: "0 0 6px #0ea5e9",
-                }}
-              />
-            </Marker>
-          </Map>
-        </div>
+    <svg width={200} height={200} viewBox="0 0 200 200" style={{ display: "block" }}>
+      <defs>
+        <clipPath id="ai-clip"><circle cx={cx} cy={cy} r={r} /></clipPath>
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#0d3d6b" />
+          <stop offset="100%" stopColor="#1a72c4" />
+        </linearGradient>
+        <linearGradient id="gnd" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#5c3510" />
+          <stop offset="100%" stopColor="#2e1a06" />
+        </linearGradient>
+      </defs>
 
-        <div className="bg-card p-4 rounded-md border border-border">
-          <div className="flex items-center gap-3 flex-wrap">
-            <Button
-              size="icon"
-              variant="outline"
-              onClick={() => {
-                setIndex(0);
-                setIsPlaying(false);
-              }}
-            >
-              <SkipBack className="w-4 h-4" />
-            </Button>
-            <Button
-              size="icon"
-              variant={isPlaying ? "default" : "outline"}
-              onClick={() => setIsPlaying(!isPlaying)}
-            >
-              {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-            </Button>
-            <div className="flex items-center gap-1">
-              {[1, 2, 5, 10].map((s) => (
-                <Button
-                  key={s}
-                  size="sm"
-                  variant={speed === s ? "secondary" : "ghost"}
-                  onClick={() => setSpeed(s)}
-                >
-                  {s}x
-                </Button>
-              ))}
+      <g clipPath="url(#ai-clip)">
+        {/* Rotated+pitched world */}
+        <g transform={`rotate(${-roll}, ${cx}, ${cy})`}>
+          <g transform={`translate(0, ${pitch * PPD})`}>
+            <rect x={-200} y={-500} width={600} height={600 + cy} fill="url(#sky)" />
+            <rect x={-200} y={cy} width={600} height={600} fill="url(#gnd)" />
+            <line x1={-200} y1={cy} x2={400} y2={cy} stroke="white" strokeWidth={1.5} />
+            {/* Pitch ladder */}
+            {[-30, -20, -15, -10, -5, 5, 10, 15, 20, 30].map(d => {
+              const y = cy - d * PPD;
+              const w = Math.abs(d) % 10 === 0 ? 32 : 22;
+              return (
+                <g key={d}>
+                  <line x1={cx - w} y1={y} x2={cx + w} y2={y} stroke="white" strokeWidth={1} opacity={0.75} />
+                  {Math.abs(d) % 10 === 0 && (
+                    <>
+                      <text x={cx - w - 4} y={y + 4} fill="white" fontSize={8} textAnchor="end" fontFamily="monospace">{Math.abs(d)}</text>
+                      <text x={cx + w + 4} y={y + 4} fill="white" fontSize={8} textAnchor="start" fontFamily="monospace">{Math.abs(d)}</text>
+                    </>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+          {/* Roll tick at top */}
+          <line x1={cx} y1={cy - r + 2} x2={cx} y2={cy - r + 12} stroke="white" strokeWidth={1.5} />
+        </g>
+      </g>
+
+      {/* Bezel */}
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#152840" strokeWidth={3} />
+
+      {/* Roll scale ticks */}
+      {[-60, -45, -30, -20, -10, 10, 20, 30, 45, 60].map(d => {
+        const a = (d - 90) * Math.PI / 180;
+        return (
+          <line key={d}
+            x1={cx + (r - 12) * Math.cos(a)} y1={cy + (r - 12) * Math.sin(a)}
+            x2={cx + (r - 4) * Math.cos(a)} y2={cy + (r - 4) * Math.sin(a)}
+            stroke="white" strokeWidth={1} opacity={0.6}
+          />
+        );
+      })}
+
+      {/* Roll pointer triangle */}
+      <g transform={`rotate(${-roll}, ${cx}, ${cy})`}>
+        <polygon points={`${cx},${cy - r + 18} ${cx - 6},${cy - r + 6} ${cx + 6},${cy - r + 6}`} fill="white" />
+      </g>
+
+      {/* Fixed aircraft symbol */}
+      <line x1={cx - 42} y1={cy} x2={cx - 12} y2={cy} stroke="#f5c518" strokeWidth={3} strokeLinecap="round" />
+      <line x1={cx + 12} y1={cy} x2={cx + 42} y2={cy} stroke="#f5c518" strokeWidth={3} strokeLinecap="round" />
+      <line x1={cx} y1={cy - 6} x2={cx} y2={cy + 6} stroke="#f5c518" strokeWidth={1.5} />
+      <circle cx={cx} cy={cy} r={3.5} fill="#f5c518" />
+    </svg>
+  );
+}
+
+// ── Vertical Tape ───────────────────────────────────────────────────────
+function VTape({ value, step, label, unit, color, width = 60, height = 200 }: {
+  value: number; step: number; label: string; unit: string; color: string; width?: number; height?: number;
+}) {
+  const PX = height / (step * 12); // ~12 steps visible
+  const range = Math.ceil(height / PX / 2 / step) * step + step;
+  const min = Math.max(0, Math.floor((value - range) / step) * step);
+  const max = Math.ceil((value + range) / step) * step;
+  const ticks: number[] = [];
+  for (let v = min; v <= max; v += step) ticks.push(v);
+
+  // higher values appear ABOVE center
+  // position of tick v: H/2 - (v - value) * PX
+  const py = (v: number) => height / 2 - (v - value) * PX;
+
+  return (
+    <div style={{ width, display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <div style={{ color: "#6090c0", fontSize: 9, fontFamily: "monospace", marginBottom: 2 }}>{label}</div>
+      <div style={{ position: "relative", width, height, background: "#07101f", border: "1px solid #1e3d5a", overflow: "hidden", borderRadius: 2 }}>
+        {ticks.map(v => {
+          const y = py(v);
+          if (y < -20 || y > height + 20) return null;
+          return (
+            <div key={v} style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+              <div style={{ position: "absolute", top: y - 8, right: 4, color: "#8fb0d8", fontFamily: "monospace", fontSize: 10, textAlign: "right", lineHeight: "16px" }}>{v}</div>
+              <div style={{ position: "absolute", top: y, left: 0, width: "40%", height: 1, background: "#1e3d5a" }} />
             </div>
-            <div className="flex-1 min-w-[100px]">
-              <Slider
-                value={[progress]}
-                max={100}
-                step={0.1}
-                onValueChange={(val) =>
-                  setIndex(
-                    Math.floor((val[0] / 100) * (validPoints.length - 1))
-                  )
-                }
-              />
-            </div>
-            <div className="font-mono text-sm tracking-wider text-cyan-400">
-              {currentPoint.lclTime?.split(" ")[1] ?? "--"}
-            </div>
-          </div>
+          );
+        })}
+        {/* Center bug */}
+        <div style={{
+          position: "absolute", top: height / 2 - 13, left: 0, right: 0, height: 26,
+          background: "#050e1e", border: `2px solid ${color}`,
+          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3
+        }}>
+          <span style={{ color, fontSize: 14, fontWeight: "bold", fontFamily: "monospace" }}>
+            {Math.round(value)}
+          </span>
         </div>
+        {/* Trend chevrons */}
+        <div style={{ position: "absolute", top: height / 2 - 13, left: 2, fontSize: 10, color: color, opacity: 0.5 }}>▶</div>
       </div>
+      <div style={{ color: "#4060a0", fontSize: 8, fontFamily: "monospace", marginTop: 2 }}>{unit}</div>
+    </div>
+  );
+}
 
-      <div className="grid grid-cols-2 gap-3 content-start">
-        <InstrumentBox label="ALT" value={currentPoint.altGps?.toFixed(0)} unit="FT" />
-        <InstrumentBox label="IAS" value={currentPoint.ias?.toFixed(0)} unit="KT" />
-        <InstrumentBox label="HDG" value={currentPoint.hdg?.toFixed(0)} unit="DEG" />
-        <InstrumentBox label="VSPD" value={currentPoint.vspd?.toFixed(0)} unit="FPM" />
-        <InstrumentBox label="RPM" value={currentPoint.e1Rpm?.toFixed(0)} unit="RPM" />
-        <InstrumentBox label="MAP" value={currentPoint.e1Map?.toFixed(1)} unit="IN" />
-        <InstrumentBox
-          label="CHT MAX"
-          value={chtMax > 0 ? chtMax.toFixed(0) : "--"}
-          unit="°F"
-          alert={chtMax > 400}
-        />
-        <InstrumentBox label="OAT" value={currentPoint.oat?.toFixed(1)} unit="°C" />
+// ── VSI Bar ─────────────────────────────────────────────────────────────
+function VSIBar({ vspd, height = 200 }: { vspd: number; height?: number }) {
+  const MAX = 2000;
+  const clamped = Math.max(-MAX, Math.min(MAX, vspd));
+  const halfH = (height - 40) / 2;
+  const barH = (Math.abs(clamped) / MAX) * halfH;
+  const up = clamped >= 0;
+
+  return (
+    <div style={{ width: 36, display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <div style={{ color: "#6090c0", fontSize: 8, fontFamily: "monospace", marginBottom: 2 }}>VSI</div>
+      <div style={{ position: "relative", width: 36, height, background: "#07101f", border: "1px solid #1e3d5a", overflow: "hidden", borderRadius: 2 }}>
+        {/* Center line */}
+        <div style={{ position: "absolute", top: height / 2, left: 0, right: 0, height: 1, background: "#2a4060" }} />
+        {/* Up bar */}
+        {up && barH > 0 && (
+          <div style={{ position: "absolute", bottom: height / 2, left: 4, right: 4, height: barH, background: "#00c3ff", borderRadius: "2px 2px 0 0", transition: "height 0.2s" }} />
+        )}
+        {/* Down bar */}
+        {!up && barH > 0 && (
+          <div style={{ position: "absolute", top: height / 2, left: 4, right: 4, height: barH, background: "#ff6633", borderRadius: "0 0 2px 2px", transition: "height 0.2s" }} />
+        )}
+        {/* Labels */}
+        {[2000, 1000, -1000, -2000].map(v => {
+          const y = height / 2 - (v / MAX) * halfH;
+          return (
+            <div key={v} style={{ position: "absolute", top: y - 5, right: 4, color: "#3a5a7a", fontSize: 7, fontFamily: "monospace" }}>
+              {Math.abs(v / 1000)}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ color: clamped > 0 ? "#00c3ff" : clamped < 0 ? "#ff6633" : "#4060a0", fontSize: 9, fontFamily: "monospace", marginTop: 2 }}>
+        {clamped > 0 ? "+" : ""}{Math.round(clamped)}
       </div>
     </div>
   );
 }
 
-function ReplayPath({
-  points,
-  color,
-  opacity,
-  latLngToPixel,
-}: {
-  points: { lat: number; lon: number }[];
-  color: string;
-  opacity: number;
-  latLngToPixel?: (ll: [number, number]) => [number, number];
-}) {
-  if (!latLngToPixel || points.length < 2) return null;
-
-  const coords = points.map((p) => latLngToPixel([p.lat, p.lon]));
-  const d = coords
-    .map((c, i) => `${i === 0 ? "M" : "L"}${c[0].toFixed(1)},${c[1].toFixed(1)}`)
-    .join(" ");
+// ── Heading Compass ─────────────────────────────────────────────────────
+function HSI({ hdg }: { hdg: number }) {
+  const cx = 90, cy = 90, r = 84;
+  const cards = ["N", "E", "S", "W"];
 
   return (
-    <svg
-      style={{
-        position: "absolute",
-        top: 0,
-        left: 0,
-        width: "100%",
-        height: "100%",
-        pointerEvents: "none",
-      }}
-    >
-      <path d={d} stroke={color} strokeWidth={2.5} fill="none" opacity={opacity} />
+    <svg width={180} height={180} viewBox="0 0 180 180">
+      <circle cx={cx} cy={cy} r={r} fill="#07101f" stroke="#1e3d5a" strokeWidth={2} />
+
+      <g transform={`rotate(${-hdg}, ${cx}, ${cy})`}>
+        {Array.from({ length: 36 }, (_, i) => i * 10).map(d => {
+          const a = (d - 90) * Math.PI / 180;
+          const isMaj = d % 30 === 0;
+          const ri = isMaj ? r - 16 : r - 9;
+          return (
+            <line key={d}
+              x1={cx + ri * Math.cos(a)} y1={cy + ri * Math.sin(a)}
+              x2={cx + (r - 3) * Math.cos(a)} y2={cy + (r - 3) * Math.sin(a)}
+              stroke={d === 0 ? "#ff5555" : "#3a5a7a"} strokeWidth={isMaj ? 2 : 1}
+            />
+          );
+        })}
+        {cards.map((c, i) => {
+          const a = (i * 90 - 90) * Math.PI / 180;
+          return (
+            <text key={c} x={cx + (r - 26) * Math.cos(a)} y={cy + (r - 26) * Math.sin(a) + 4}
+              fill={c === "N" ? "#ff5555" : "#a0c0e0"} fontSize={13} fontWeight="bold"
+              textAnchor="middle" fontFamily="monospace">{c}</text>
+          );
+        })}
+        {[3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33].map(n => {
+          const a = (n * 10 - 90) * Math.PI / 180;
+          return (
+            <text key={n} x={cx + (r - 22) * Math.cos(a)} y={cy + (r - 22) * Math.sin(a) + 3}
+              fill="#3a5a7a" fontSize={7} textAnchor="middle" fontFamily="monospace">{n}</text>
+          );
+        })}
+      </g>
+
+      {/* Fixed aircraft */}
+      <line x1={cx} y1={cy - 22} x2={cx} y2={cy - 10} stroke="#f5c518" strokeWidth={2} />
+      <line x1={cx - 18} y1={cy} x2={cx + 18} y2={cy} stroke="#f5c518" strokeWidth={2} />
+      <circle cx={cx} cy={cy} r={3} fill="#f5c518" />
+
+      {/* North triangle */}
+      <polygon points={`${cx},${cy - r + 2} ${cx - 5},${cy - r + 13} ${cx + 5},${cy - r + 13}`} fill="#ff5555" />
+
+      {/* HDG readout */}
+      <rect x={cx - 24} y={cy + r - 22} width={48} height={18} rx={2} fill="#050e1e" stroke="#1e3d5a" />
+      <text x={cx} y={cy + r - 9} fill="#00c3ff" fontSize={12} textAnchor="middle" fontFamily="monospace" fontWeight="bold">
+        {String(Math.round(hdg) % 360).padStart(3, "0")}°
+      </text>
     </svg>
   );
 }
 
-function InstrumentBox({
-  label,
-  value,
-  unit,
-  alert = false,
-}: {
-  label: string;
-  value: any;
-  unit: string;
-  alert?: boolean;
+// ── Arc Gauge ───────────────────────────────────────────────────────────
+function ArcGauge({ label, value, min, max, unit, green, yellow, red, dec = 0 }: {
+  label: string; value: number; min: number; max: number; unit: string; dec?: number;
+  green?: [number, number]; yellow?: [number, number]; red?: [number, number][];
 }) {
+  const S = 108, cx = 54, cy = 60, r = 42;
+  const A0 = 135, SWEEP = 270;
+
+  const toXY = (pct: number) => {
+    const a = (A0 + pct * SWEEP) * Math.PI / 180;
+    return [cx + r * Math.cos(a), cy + r * Math.sin(a)] as [number, number];
+  };
+
+  const arcD = (p1: number, p2: number) => {
+    const [x1, y1] = toXY(p1), [x2, y2] = toXY(p2);
+    const large = (p2 - p1) * SWEEP > 180 ? 1 : 0;
+    return `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`;
+  };
+
+  const pct = Math.max(0, Math.min(1, (value - min) / (max - min)));
+  const [nx, ny] = toXY(pct);
+
+  const isRed = red?.some(([lo, hi]) => value < lo || value > hi);
+  const isYellow = !isRed && yellow && (value < yellow[0] || value > yellow[1]);
+  const vColor = isRed ? "#ff3333" : isYellow ? "#ffaa00" : "#00cc66";
+
+  const bgP1 = toXY(0), bgP2 = toXY(1);
+
   return (
-    <div
-      className={`bg-card p-4 rounded-md border flex flex-col justify-center ${
-        alert ? "border-destructive bg-destructive/10" : "border-border"
-      }`}
-    >
-      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-        {label}
-      </span>
-      <div className="mt-1 flex items-baseline gap-1">
-        <span
-          className={`text-2xl font-mono font-bold tracking-tight ${
-            alert ? "text-destructive" : "text-foreground"
-          }`}
-        >
-          {value ?? "--"}
-        </span>
-        <span className="text-xs font-mono text-muted-foreground">{unit}</span>
+    <div style={{ textAlign: "center", width: S }}>
+      <svg width={S} height={80} viewBox={`0 0 ${S} 80`}>
+        <path d={`M ${bgP1[0]} ${bgP1[1]} A ${r} ${r} 0 1 1 ${bgP2[0]} ${bgP2[1]}`} fill="none" stroke="#0f1e30" strokeWidth={7} />
+        {green && <path d={arcD(Math.max(0, (green[0] - min) / (max - min)), Math.min(1, (green[1] - min) / (max - min)))} fill="none" stroke="#00cc66" strokeWidth={6} />}
+        {yellow && <path d={arcD(Math.max(0, (yellow[0] - min) / (max - min)), Math.min(1, (yellow[1] - min) / (max - min)))} fill="none" stroke="#ffaa00" strokeWidth={5} strokeDasharray="4 3" />}
+        {red?.map(([lo, hi], i) => (
+          <path key={i} d={arcD(Math.max(0, (lo - min) / (max - min)), Math.min(1, (hi - min) / (max - min)))} fill="none" stroke="#ff3333" strokeWidth={6} />
+        ))}
+        <line x1={cx} y1={cy} x2={nx} y2={ny} stroke={vColor} strokeWidth={2.5} strokeLinecap="round" />
+        <circle cx={cx} cy={cy} r={3.5} fill={vColor} />
+        <text x={cx} y={cy + 18} fill={vColor} fontSize={13} textAnchor="middle" fontFamily="monospace" fontWeight="bold">
+          {value.toFixed(dec)}
+        </text>
+      </svg>
+      <div style={{ color: "#5070a0", fontSize: 9, fontFamily: "monospace", marginTop: -4 }}>
+        <span style={{ color: "#8090b0" }}>{label}</span> <span style={{ color: "#3a5060" }}>{unit}</span>
       </div>
+    </div>
+  );
+}
+
+// ── Playback Controls ───────────────────────────────────────────────────
+function Controls({ index, total, isPlaying, speed, onToggle, onSeek, onSkip, onSpeed }: {
+  index: number; total: number; isPlaying: boolean; speed: number;
+  onToggle: () => void; onSeek: (i: number) => void; onSkip: (delta: number) => void;
+  onSpeed: (s: number) => void;
+}) {
+  const progress = total > 1 ? (index / (total - 1)) * 100 : 0;
+  const btn = (label: string, onClick: () => void, active = false) => (
+    <button onClick={onClick} style={{
+      background: active ? "#00c3ff" : "#0d1e30", color: active ? "#000" : "#80b0d0",
+      border: `1px solid ${active ? "#00c3ff" : "#1e3d5a"}`, borderRadius: 4,
+      fontFamily: "monospace", fontSize: 12, padding: "4px 10px", cursor: "pointer",
+    }}>{label}</button>
+  );
+
+  return (
+    <div style={{ background: "#07101f", borderTop: "1px solid #1e3d5a", padding: "10px 16px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      {btn("|◀", () => { onSeek(0); })}
+      {btn("◀◀", () => onSkip(-Math.max(10, speed * 5)))}
+      {btn(isPlaying ? "⏸" : "▶", onToggle, isPlaying)}
+      {btn("▶▶", () => onSkip(Math.max(10, speed * 5)))}
+      <div style={{ width: 1, height: 20, background: "#1e3d5a" }} />
+      {[1, 2, 4, 8].map(s => <span key={s}>{btn(`${s}×`, () => onSpeed(s), speed === s)}</span>)}
+      <div style={{ flex: 1, minWidth: 100 }}>
+        <Slider value={[progress]} max={100} step={0.1}
+          onValueChange={([v]) => onSeek(Math.floor((v / 100) * (total - 1)))} />
+      </div>
+      <span style={{ color: "#4060a0", fontFamily: "monospace", fontSize: 11 }}>
+        {index + 1}/{total}
+      </span>
+    </div>
+  );
+}
+
+// ── Main Export ─────────────────────────────────────────────────────────
+export function FlightReplay({ points }: Props) {
+  const [index, setIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [speed, setSpeed] = useState(1);
+
+  const { anomalies, casEvents } = useMemo(() => analyze(points), [points]);
+
+  useEffect(() => {
+    if (!isPlaying || points.length === 0) return;
+    const id = setInterval(() => {
+      setIndex(i => {
+        if (i >= points.length - 1) { setIsPlaying(false); return i; }
+        return Math.min(i + Math.max(1, speed), points.length - 1);
+      });
+    }, 100);
+    return () => clearInterval(id);
+  }, [isPlaying, speed, points.length]);
+
+  if (points.length === 0) {
+    return (
+      <div className="h-64 flex items-center justify-center text-muted-foreground font-mono text-sm">
+        Sin datos de vuelo
+      </div>
+    );
+  }
+
+  const p = points[index] ?? points[0];
+  const pitch = p.pitch ?? 0;
+  const roll = p.roll ?? 0;
+  const hdg = p.hdg ?? 0;
+  const ias = p.ias ?? 0;
+  const alt = p.altGps ?? p.altP ?? 0;
+  const vspd = p.vspd ?? 0;
+  const rpm = p.e1Rpm ?? 0;
+  const oilP = p.e1OilP ?? 0;
+  const oilT = p.e1OilT ?? 0;
+  const fflow = p.e1Fflow ?? 0;
+  const volts = p.volts1 ?? 0;
+
+  const activeCAS = p.alerts
+    ? p.alerts.split("/").map(s => s.trim()).filter(Boolean)
+    : [];
+
+  const panelBg = { background: "#050e1e" };
+  const borderRight = { borderRight: "1px solid #1e3d5a" };
+  const borderBottom = { borderBottom: "1px solid #1e3d5a" };
+  const sectionLabel = { color: "#2a4a70", fontSize: 9, fontFamily: "monospace", letterSpacing: "0.12em", textTransform: "uppercase" as const, marginBottom: 8 };
+
+  return (
+    <div style={{ ...panelBg, borderRadius: 8, border: "1px solid #1e3d5a", overflow: "hidden", fontFamily: "monospace" }}>
+      {/* Header bar */}
+      <div style={{ background: "#070f1e", ...borderBottom, padding: "6px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ color: "#00c3ff", fontSize: 12, fontWeight: "bold", letterSpacing: "0.1em" }}>G3X TOUCH — FLIGHT REPLAY</span>
+        <span style={{ color: "#3a5a7a", fontSize: 12 }}>{p.lclTime?.split(" ")[1] ?? "--:--:--"}</span>
+      </div>
+
+      {/* Main body: PFD | Engine+Analysis */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", minHeight: 520 }}>
+
+        {/* ── LEFT: PFD ── */}
+        <div style={{ ...borderRight, padding: 12 }}>
+          <div style={sectionLabel}>PFD</div>
+
+          {/* Tapes + AI row */}
+          <div style={{ display: "flex", gap: 6, justifyContent: "center", alignItems: "flex-start" }}>
+            <VTape value={ias} step={10} label="IAS" unit="KT" height={200}
+              color={ias > THR.iasCrit ? "#ff3333" : ias > THR.iasWarn ? "#ffaa00" : "#00c3ff"} />
+            <AttitudeIndicator pitch={pitch} roll={roll} />
+            <VTape value={alt} step={200} label="ALT" unit="FT" height={200} color="#00cc66" />
+            <VSIBar vspd={vspd} height={200} />
+          </div>
+
+          {/* HSI */}
+          <div style={{ display: "flex", justifyContent: "center", marginTop: 10 }}>
+            <HSI hdg={hdg} />
+          </div>
+
+          {/* Data row */}
+          <div style={{ display: "flex", justifyContent: "space-around", marginTop: 8, padding: "6px 0", borderTop: "1px solid #0f2030" }}>
+            {[
+              { l: "PITCH", v: `${pitch.toFixed(1)}°` },
+              { l: "ROLL", v: `${roll.toFixed(1)}°` },
+              { l: "TAS", v: p.tas ? `${p.tas.toFixed(0)} kt` : "--" },
+              { l: "OAT", v: p.oat != null ? `${p.oat.toFixed(1)}°C` : "--" },
+            ].map(({ l, v }) => (
+              <div key={l} style={{ textAlign: "center" }}>
+                <div style={{ color: "#2a4060", fontSize: 8 }}>{l}</div>
+                <div style={{ color: "#a0c0e0", fontSize: 13, fontWeight: "bold" }}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── RIGHT: Engine + CAS + Analysis ── */}
+        <div style={{ display: "flex", flexDirection: "column" }}>
+
+          {/* Engine gauges */}
+          <div style={{ padding: 12, ...borderBottom }}>
+            <div style={sectionLabel}>ENGINE</div>
+            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 4 }}>
+              <ArcGauge label="RPM" value={rpm} min={0} max={3000} unit="RPM"
+                green={[500, 2500]} yellow={[2500, 2700]} red={[[2700, 3000]]} />
+              <ArcGauge label="OIL P" value={oilP} min={0} max={120} unit="PSI"
+                green={[55, 90]} yellow={[25, 55]} red={[[0, 25], [100, 120]]} />
+              <ArcGauge label="OIL T" value={oilT} min={50} max={300} unit="°F"
+                green={[100, 230]} yellow={[230, 245]} red={[[245, 300]]} />
+              <ArcGauge label="F.FLOW" value={fflow} min={0} max={15} unit="GPH"
+                green={[0, 12]} yellow={[12, 13]} red={[[13, 15]]} dec={1} />
+              <ArcGauge label="VOLTS" value={volts} min={10} max={16} unit="V"
+                green={[12.5, 14.5]} yellow={[12, 12.5]} red={[[10, 12], [15, 16]]} dec={1} />
+            </div>
+          </div>
+
+          {/* CAS + Analysis */}
+          <div style={{ padding: 12, flex: 1, overflowY: "auto" }}>
+
+            {/* Active CAS */}
+            <div style={sectionLabel}>CAS ACTIVOS</div>
+            {activeCAS.length === 0 ? (
+              <div style={{ color: "#1a4020", fontSize: 10, marginBottom: 10 }}>— Sin mensajes activos —</div>
+            ) : (
+              <div style={{ marginBottom: 10 }}>
+                {activeCAS.map((m, i) => (
+                  <div key={i} style={{ background: "#2a0f00", border: "1px solid #993300", borderRadius: 3, padding: "3px 8px", marginBottom: 2, color: "#ffaa44", fontSize: 11 }}>
+                    ⚠ {m}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Smart analysis */}
+            <div style={sectionLabel}>ANÁLISIS INTELIGENTE</div>
+            <div style={{ maxHeight: 180, overflowY: "auto", marginBottom: 10 }}>
+              {anomalies.length === 0 ? (
+                <div style={{ color: "#1a5030", fontSize: 10, padding: "4px 0" }}>✓ Sin eventos detectados</div>
+              ) : anomalies.map((ev, i) => (
+                <div key={i} style={{
+                  display: "flex", gap: 6, alignItems: "center", marginBottom: 3,
+                  padding: "3px 8px", borderRadius: 3,
+                  background: ev.severity === "crit" ? "#1a0000" : "#12100000".slice(0, 9) + "1a",
+                  border: `1px solid ${ev.severity === "crit" ? "#660000" : "#554400"}`,
+                }}>
+                  <span style={{ fontSize: 10 }}>{ev.severity === "crit" ? "🔴" : "🟡"}</span>
+                  <span style={{ color: "#3a5a7a", fontSize: 9, width: 48, flexShrink: 0 }}>{ev.time}</span>
+                  <span style={{ color: ev.severity === "crit" ? "#ff6666" : "#ffcc44", fontSize: 10, flex: 1 }}>{ev.label}</span>
+                  <span style={{ color: ev.severity === "crit" ? "#ff9999" : "#ccaa22", fontSize: 10 }}>{ev.value}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* CAS event log with timestamps */}
+            {casEvents.length > 0 && (
+              <>
+                <div style={sectionLabel}>REGISTRO CAS</div>
+                <div style={{ maxHeight: 120, overflowY: "auto" }}>
+                  {casEvents.map((ev, i) => (
+                    <div key={i} style={{ display: "flex", gap: 8, marginBottom: 2, padding: "2px 4px", borderBottom: "1px solid #0a1a28" }}>
+                      <span style={{ color: "#ffaa44", fontSize: 9, width: 54, flexShrink: 0 }}>{ev.firstTime}</span>
+                      <span style={{ color: "#a07050", fontSize: 9, flex: 1 }}>{ev.message}</span>
+                      <span style={{ color: "#3a5060", fontSize: 9 }}>×{ev.count}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Playback controls */}
+      <Controls
+        index={index} total={points.length}
+        isPlaying={isPlaying} speed={speed}
+        onToggle={() => setIsPlaying(v => !v)}
+        onSeek={setIndex}
+        onSkip={d => setIndex(i => Math.max(0, Math.min(points.length - 1, i + d)))}
+        onSpeed={setSpeed}
+      />
     </div>
   );
 }
