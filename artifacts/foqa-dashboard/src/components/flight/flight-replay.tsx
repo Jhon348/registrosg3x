@@ -5,7 +5,6 @@ import { Play, Pause } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import L from "leaflet";
-import "leaflet/dist/leaflet.css";
 
 // Fix for default marker icons in Leaflet
 delete (L.Icon.Default.prototype as any)._getIconUrl;

@@ -1,7 +1,5 @@
-import { useEffect } from "react";
 import { MapContainer, TileLayer, Polyline, Marker } from "react-leaflet";
 import L from "leaflet";
-import "leaflet/dist/leaflet.css";
 import { FlightPoint } from "@workspace/api-client-react";
 
 // Fix for default marker icons in Leaflet with Webpack/Vite
