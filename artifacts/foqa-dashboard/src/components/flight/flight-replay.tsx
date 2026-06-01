@@ -101,9 +101,12 @@ export function FlightReplay({ points }: Props) {
 
     return () => {
       ro.disconnect();
-      mapRef.current?.off();
-      mapRef.current?.remove();
-      mapRef.current = null;
+      if (mapRef.current) {
+        mapRef.current.eachLayer((layer) => mapRef.current!.removeLayer(layer));
+        mapRef.current.off();
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
       markerRef.current = null;
       traceRef.current = null;
     };

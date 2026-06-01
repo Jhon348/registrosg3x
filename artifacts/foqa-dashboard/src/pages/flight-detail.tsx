@@ -121,7 +121,7 @@ export default function FlightDetail() {
               </div>
             ) : points ? (
               <>
-                <TabsContent forceMount value="map" className="m-0 focus-visible:outline-none data-[state=inactive]:hidden">
+                <TabsContent value="map" className="m-0 focus-visible:outline-none">
                   <FlightMap points={points} />
                 </TabsContent>
                 <TabsContent value="telemetry" className="m-0 focus-visible:outline-none">
@@ -130,7 +130,7 @@ export default function FlightDetail() {
                 <TabsContent value="engine" className="m-0 focus-visible:outline-none">
                   <FlightEngineCharts points={points} />
                 </TabsContent>
-                <TabsContent forceMount value="replay" className="m-0 focus-visible:outline-none data-[state=inactive]:hidden">
+                <TabsContent value="replay" className="m-0 focus-visible:outline-none">
                   <FlightReplay points={points} />
                 </TabsContent>
               </>

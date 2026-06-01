@@ -60,10 +60,11 @@ export function FlightMap({ points }: FlightMapProps) {
     map.fitBounds(L.latLngBounds(positions), { padding: [30, 30] });
 
     return () => {
+      // Remove all layers first to abort in-flight tile requests
+      map.eachLayer((layer) => map.removeLayer(layer));
       map.off();
       map.remove();
       mapRef.current = null;
-      // outerRef.current is intentionally NOT removed — React owns it
     };
   }, [validPoints.length]);
 
