@@ -17,14 +17,14 @@ const THR = {
   rpmCrit: 2600,
   // IAS (kt) — Vno / Vne (not in POH table, kept from prior)
   iasWarn: 145, iasCrit: 165,
-  // Volts: green 12.4-15.5, yellow below 12.4, red above 15.5
-  voltLowWarn: 12.4, voltHighCrit: 15.5,
+  // Volts: green 12.4-15.5, yellow below 12.4 OR above 15.5 — no red
+  voltLowWarn: 12.4, voltHighWarn: 15.5,
   // CHT (°F): yellow 100-200, green 200-465, red above 465
   chtWarnLo: 100, chtWarnHi: 200, chtCrit: 465,
   // EGT (°F): green 1100-1550, red above 1550
   egtGreenLo: 1100, egtCrit: 1550,
-  // MAP ("Hg): green 11-32, red above 32
-  mapCrit: 32,
+  // MAP ("Hg): green 11-32 only — no yellow, no red in POH
+  mapGreenLo: 11, mapGreenHi: 32,
   // Amps: green 1-60, yellow below 0
   ampsWarn: 0,
 };
@@ -68,16 +68,15 @@ function analyze(pts: FlightPoint[]) {
       // IAS
       ["iasCrit",  (p.ias ?? 0) > THR.iasCrit,                      "EXCESO VEL (Vne)",       `${p.ias?.toFixed(0)} kt`,  "crit"],
       ["iasWarn",  (p.ias ?? 0) > THR.iasWarn,                      "Velocidad > Vno",        `${p.ias?.toFixed(0)} kt`,  "warn"],
-      // Volts
-      ["voltHi",   (p.volts1 ?? 0) > THR.voltHighCrit,              "SOBREVOLTS",             `${p.volts1?.toFixed(1)} V`, "crit"],
+      // Volts (yellow only: below 12.4 or above 15.5 — no red per POH)
+      ["voltHi",   (p.volts1 ?? 0) > THR.voltHighWarn && (p.volts1 ?? 0) > 0,              "Voltaje Alto",  `${p.volts1?.toFixed(1)} V`, "warn"],
       ["voltLow",  (p.volts1 ?? 99) < THR.voltLowWarn && (p.volts1 ?? 99) > 0, "Voltaje Bajo", `${p.volts1?.toFixed(1)} V`, "warn"],
       // CHT
       ["chtCrit",  cht > THR.chtCrit,                                "OVERTEMP CULATA",        `${cht.toFixed(0)}°F`,      "crit"],
       ["chtWarn",  cht > 0 && cht < THR.chtWarnHi,                   "CHT Fría",               `${cht.toFixed(0)}°F`,      "warn"],
       // EGT
       ["egtCrit",  egt > THR.egtCrit,                                "OVERTEMP EGT",           `${egt.toFixed(0)}°F`,      "crit"],
-      // MAP
-      ["mapCrit",  map > THR.mapCrit,                                 "EXCESO PRESIÓN MÚLTIPLE",`${map.toFixed(1)}"`,       "crit"],
+      // MAP — no limit in POH, no anomaly check needed
     ];
 
     for (const [key, active, label, value, severity] of checks) {
@@ -512,7 +511,7 @@ export function FlightReplay({ points }: Props) {
               <ArcGauge label="RPM" value={rpm} min={0} max={3000} unit="RPM"
                 green={[700, 2600]} red={[[2600, 3000]]} />
               <ArcGauge label="MAP" value={map} min={0} max={40} unit='"Hg'
-                green={[11, 32]} red={[[32, 40]]} dec={1} />
+                green={[11, 32]} dec={1} />
               <ArcGauge label="OIL P" value={oilP} min={0} max={130} unit="PSI"
                 green={[55, 95]}
                 yellows={[[25, 55], [95, 115]]}
@@ -532,8 +531,7 @@ export function FlightReplay({ points }: Props) {
                 red={[[1550, 1700]]} />
               <ArcGauge label="VOLTS" value={volts} min={10} max={17} unit="V"
                 green={[12.4, 15.5]}
-                yellows={[[10, 12.4]]}
-                red={[[15.5, 17]]} dec={1} />
+                yellows={[[10, 12.4], [15.5, 17]]} dec={1} />
               <ArcGauge label="AMPS" value={amps} min={-10} max={70} unit="A"
                 green={[1, 60]}
                 yellows={[[-10, 0]]} />
