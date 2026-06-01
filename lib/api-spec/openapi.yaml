@@ -3,13 +3,15 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Alvarez Aviation FOQA Dashboard API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: flights
+    description: Flight log operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,112 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /flights:
+    get:
+      operationId: listFlights
+      tags: [flights]
+      summary: List all uploaded flights
+      responses:
+        "200":
+          description: List of flights
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Flight"
+
+  /flights/upload:
+    post:
+      operationId: uploadFlight
+      tags: [flights]
+      summary: Upload a G3X CSV log file
+      responses:
+        "201":
+          description: Flight uploaded and parsed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Flight"
+        "400":
+          description: Invalid file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /flights/{id}:
+    get:
+      operationId: getFlight
+      tags: [flights]
+      summary: Get flight metadata and stats
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Flight details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Flight"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteFlight
+      tags: [flights]
+      summary: Delete a flight log
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /flights/{id}/points:
+    get:
+      operationId: getFlightPoints
+      tags: [flights]
+      summary: Get all telemetry data points for a flight
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Array of flight data points
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FlightPoint"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +142,143 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    Flight:
+      type: object
+      required:
+        - id
+        - filename
+        - aircraftIdent
+        - product
+        - softwareVersion
+        - totalPoints
+        - uploadedAt
+      properties:
+        id:
+          type: integer
+        filename:
+          type: string
+        aircraftIdent:
+          type: string
+        product:
+          type: string
+        softwareVersion:
+          type: string
+        systemId:
+          type: ["string", "null"]
+        airframeHours:
+          type: ["number", "null"]
+        engineHours:
+          type: ["number", "null"]
+        totalPoints:
+          type: integer
+        startTime:
+          type: ["string", "null"]
+        endTime:
+          type: ["string", "null"]
+        maxAltGps:
+          type: ["number", "null"]
+        maxIas:
+          type: ["number", "null"]
+        maxRpm:
+          type: ["number", "null"]
+        maxEgt:
+          type: ["number", "null"]
+        fuelUsed:
+          type: ["number", "null"]
+        uploadedAt:
+          type: string
+
+    FlightPoint:
+      type: object
+      required:
+        - id
+        - flightId
+        - lclTime
+      properties:
+        id:
+          type: integer
+        flightId:
+          type: integer
+        lclTime:
+          type: string
+        utcTime:
+          type: ["string", "null"]
+        lat:
+          type: ["number", "null"]
+        lon:
+          type: ["number", "null"]
+        altGps:
+          type: ["number", "null"]
+        altP:
+          type: ["number", "null"]
+        ias:
+          type: ["number", "null"]
+        tas:
+          type: ["number", "null"]
+        gndSpd:
+          type: ["number", "null"]
+        trk:
+          type: ["number", "null"]
+        hdg:
+          type: ["number", "null"]
+        pitch:
+          type: ["number", "null"]
+        roll:
+          type: ["number", "null"]
+        vspd:
+          type: ["number", "null"]
+        oat:
+          type: ["number", "null"]
+        e1Rpm:
+          type: ["number", "null"]
+        e1Map:
+          type: ["number", "null"]
+        e1OilT:
+          type: ["number", "null"]
+        e1OilP:
+          type: ["number", "null"]
+        e1Fflow:
+          type: ["number", "null"]
+        volts1:
+          type: ["number", "null"]
+        amps1:
+          type: ["number", "null"]
+        fqty1:
+          type: ["number", "null"]
+        fqty2:
+          type: ["number", "null"]
+        e1Cht1:
+          type: ["number", "null"]
+        e1Cht2:
+          type: ["number", "null"]
+        e1Cht3:
+          type: ["number", "null"]
+        e1Cht4:
+          type: ["number", "null"]
+        e1Cht5:
+          type: ["number", "null"]
+        e1Cht6:
+          type: ["number", "null"]
+        e1Egt1:
+          type: ["number", "null"]
+        e1Egt2:
+          type: ["number", "null"]
+        e1Egt3:
+          type: ["number", "null"]
+        e1Egt4:
+          type: ["number", "null"]
+        e1Egt5:
+          type: ["number", "null"]
+        e1Egt6:
+          type: ["number", "null"]
+        alerts:
+          type: ["string", "null"]
+        baro:
+          type: ["number", "null"]
