@@ -173,10 +173,12 @@ const COL_ALIASES: Record<string, string> = {
   // Electrical
   "Volts (volts)":              "Volts1",
   "Amps (amps)":                "Amps1",
-  // Fuel
+  // Fuel — long-header (Excel) names
   "Wing Fuel L Qty (gal)":      "FQty1",
   "Wing Fuel R Qty (gal)":      "FQty2",
   "Acro Fuel Qty (gal)":        "FQtyAcro",
+  // Fuel — native short-header: FQty3 is the acro/centre tank
+  "FQty3":                      "FQtyAcro",
   // CHT
   "CHT 1 (deg F)":              "E1 CHT1",
   "CHT 2 (deg F)":              "E1 CHT2",
@@ -369,7 +371,9 @@ export function computeFlightStats(points: G3xPoint[]) {
       if (maxEgt == null || egt > maxEgt) maxEgt = egt;
     }
 
-    const fqty = p.fqty1 != null && p.fqty2 != null ? p.fqty1 + p.fqty2 : (p.fqty1 ?? p.fqty2);
+    // Sum all available tanks (wing L + wing R + acro) for total fuel tracking
+    const parts = [p.fqty1, p.fqty2, p.fqtyAcro].filter((v): v is number => v != null);
+    const fqty = parts.length > 0 ? parts.reduce((a, b) => a + b, 0) : null;
     if (fqty != null) {
       if (startFqty == null) startFqty = fqty;
       endFqty = fqty;
