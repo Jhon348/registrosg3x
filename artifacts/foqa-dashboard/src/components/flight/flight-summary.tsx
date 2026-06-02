@@ -150,14 +150,14 @@ export function FlightSummary({ points, loading }: Props) {
           value={f(stats.ffMax, 1)} unit="gal/h" />
         <Row label="Flujo Comb. Mínimo"
           value={f(stats.ffMin, 1)} unit="gal/h" />
-        <Row label="Tanque Ala Izq. Mín"
+        <Row label="Wing L Tank Min"
           value={f(stats.fqty1Min, 1)} unit="gal"
           alert={(stats.fqty1Min ?? 99) < 7} />
-        <Row label="Tanque Ala Der. Mín"
+        <Row label="Wing R Tank Min"
           value={f(stats.fqty2Min, 1)} unit="gal"
           alert={(stats.fqty2Min ?? 99) < 7} />
         {stats.fqtyAcroMin !== null && (
-          <Row label="Acrotanque Mín"
+          <Row label="Acro Tank Min"
             value={f(stats.fqtyAcroMin, 1)} unit="gal"
             alert={(stats.fqtyAcroMin ?? 99) < 1} />
         )}

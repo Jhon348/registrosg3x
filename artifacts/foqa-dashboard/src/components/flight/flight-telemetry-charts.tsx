@@ -78,20 +78,22 @@ export function FlightTelemetryCharts({ points }: Props) {
         </LineChart>
       </ChartCard>
 
-      {/* ── Combustible — Tanques ── */}
-      <ChartCard title="Combustible — Tanques (gal)"
-        sub="Verde ≥7 gal · Amarillo 0–7 gal (según POH)">
+      {/* ── Fuel Tanks ── */}
+      <ChartCard title="Fuel Tanks (gal)"
+        sub="Caution below 7 gal per wing tank (POH)">
         <LineChart data={data}>
           {grid}
           <XAxis dataKey="lclTime" hide />
           <YAxis stroke="#64748b" tick={axisStyle} />
           <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`${v?.toFixed(1)} gal`]} />
           <Legend wrapperStyle={{ fontSize: 11, fontFamily: "monospace" }} />
-          {/* Yellow caution below 7 gal */}
           <ReferenceLine y={7} stroke="#ffaa00" strokeDasharray="6 3"
             label={{ value: "7 gal ⚠", fill: "#ffaa00", fontSize: 10, position: "insideTopRight" }} />
-          <Line type="monotone" dataKey="fqty1" stroke="#06b6d4" dot={false} strokeWidth={2} isAnimationActive={false} name="Tanque 1" />
-          <Line type="monotone" dataKey="fqty2" stroke="#22d3ee" dot={false} strokeWidth={2} isAnimationActive={false} name="Tanque 2" />
+          <Line type="monotone" dataKey="fqty1" stroke="#06b6d4" dot={false} strokeWidth={2} isAnimationActive={false} name="Wing L" />
+          <Line type="monotone" dataKey="fqty2" stroke="#22d3ee" dot={false} strokeWidth={2} isAnimationActive={false} name="Wing R" />
+          {data.some(p => p.fqtyAcro != null) && (
+            <Line type="monotone" dataKey="fqtyAcro" stroke="#f59e0b" dot={false} strokeWidth={2} isAnimationActive={false} name="Acro Tank" />
+          )}
           <Brush dataKey="lclTime" height={24} stroke="#1e293b" fill="#0b111a" tickFormatter={() => ""} />
         </LineChart>
       </ChartCard>
