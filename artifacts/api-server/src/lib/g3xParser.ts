@@ -195,6 +195,7 @@ const COL_ALIASES: Record<string, string> = {
   "EGT 6 (deg F)":              "E1 EGT6",
   // Alerts
   "CAS Alert":                  "CAS Alert",
+  "Terrain Alert":              "Terrain Alert",
 };
 
 /** Build index map: canonical name → column index */
@@ -287,22 +288,29 @@ export function parseG3xCsv(csvContent: string): ParsedG3xLog {
 
     // CAS alerts:
     // - If the column map has a dedicated "CAS Alert" column (Excel/long-header format),
-    //   use ONLY that — no heuristic. Prevents "Terrain Alert" values (EDRC, EDRW, ITIW)
-    //   from leaking into the CAS field.
+    //   use that column. "Terrain Alert" is also read and merged in.
     // - If there is no dedicated column (native short-header format), fall back to the
-    //   last-non-numeric-field heuristic that worked before.
-    const casCol = get("CAS Alert");
-    let alertsValue: string | null;
+    //   last-non-numeric-field heuristic, then also check second-last for terrain.
+    // Both CAS and Terrain alerts are combined with " / " and stored in the alerts field.
+    let casAlert: string | null = null;
+    let terrainAlert: string | null = null;
+
     if (colMap.has("CAS Alert")) {
-      alertsValue = (casCol && casCol !== "") ? casCol : null;
+      const c = get("CAS Alert");
+      casAlert = (c && c !== "") ? c : null;
+      const t = get("Terrain Alert");
+      terrainAlert = (t && t !== "") ? t : null;
     } else {
+      // Native short-header: last two columns are CAS Alert then Terrain Alert
       const lastVal = fields[fields.length - 1] ?? "";
       const secondLastVal = fields[fields.length - 2] ?? "";
-      alertsValue =
-        (lastVal && !lastVal.match(/^[\d.-]+$/)) ? lastVal
-        : (secondLastVal && !secondLastVal.match(/^[\d.-]+$/)) ? secondLastVal
-        : null;
+      const isNonNumeric = (v: string) => v !== "" && !v.match(/^[\d.-]+$/);
+      casAlert = isNonNumeric(secondLastVal) ? secondLastVal : null;
+      terrainAlert = isNonNumeric(lastVal) ? lastVal : null;
     }
+
+    const parts = [casAlert, terrainAlert].filter(Boolean);
+    const alertsValue: string | null = parts.length > 0 ? parts.join(" / ") : null;
 
     const point: G3xPoint = {
       lclTime: fullTime,
