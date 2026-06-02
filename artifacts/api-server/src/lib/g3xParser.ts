@@ -108,8 +108,121 @@ function splitCsvLine(line: string): string[] {
   return result;
 }
 
+/**
+ * When Excel opens a Garmin G3X CSV and re-saves it, it wraps the entire row
+ * in double-quotes and doubles every internal quote ("" = escape).
+ *
+ *   Normal:  5/5/2026,12:29:50,32691,,,...
+ *   Excel:   "5/5/2026,""12:29:50"",""32691"","""",",...
+ *
+ * Detection: splitCsvLine returns exactly 1 field (the whole line was one
+ * giant quoted string) AND that field contains commas.
+ * splitCsvLine's toggle logic already strips the outer quotes and collapses
+ * the internal "" pairs into nothing — leaving the clean inner CSV.
+ */
+function normalizeExcelLine(line: string): string {
+  if (!line.startsWith('"')) return line;
+  const fields = splitCsvLine(line);
+  if (fields.length === 1 && fields[0].includes(',')) {
+    return fields[0];
+  }
+  return line;
+}
+
+/**
+ * Column aliases: maps long/unit-suffixed names (Excel/GDU long header format)
+ * to the canonical short names used internally.
+ * Garmin G3X logs have TWO header rows in the native format (long+short).
+ * Excel-saved files collapse to ONE header row with long names.
+ */
+const COL_ALIASES: Record<string, string> = {
+  // Date / time
+  "Lcl Date (yy-mm-dd)":       "Lcl Date",
+  "Lcl Date (yyyy-mm-dd)":      "Lcl Date",
+  "Lcl Time (hh:mm:ss)":        "Lcl Time",
+  "UTC Date (yyyy-mm-dd)":      "UTC Date",
+  "UTC Time (hh:mm:ss)":        "UTC Time",
+  // Position
+  "Latitude (WGS84 deg)":       "Latitude",
+  "Longitude (WGS84 deg)":      "Longitude",
+  "GPS Altitude (WGS84 ft)":    "AltGPS",
+  "Pressure Altitude (ft)":     "AltP",
+  "Baro Altitude (ft)":         "AltP",
+  // Motion
+  "GPS Ground Speed (kt)":      "GndSpd",
+  "GPS Ground Track (deg true)":"TRK",
+  "Vertical Speed (fpm)":       "VSpd",
+  "Indicated Airspeed (kt)":    "IAS",
+  "True Airspeed (kt)":         "TAS",
+  "Magnetic Heading (deg)":     "HDG",
+  "Selected Heading (deg)":     "HDG",
+  // Attitude
+  "Pitch (deg)":                "Pitch",
+  "Roll (deg)":                 "Roll",
+  // Environment
+  "Outside Air Temp (deg C)":   "OAT",
+  "Baro Setting (inch Hg)":     "Baro",
+  // Engine
+  "RPM":                        "E1 RPM",
+  "Engine RPM (rpm)":           "E1 RPM",
+  "Manifold Press (inch Hg)":   "E1 MAP",
+  "Oil Temp (deg F)":           "E1 OilT",
+  "Oil Press (PSI)":            "E1 OilP",
+  "Fuel Flow (gal/hr)":         "E1 FFlow",
+  // Electrical
+  "Volts (volts)":              "Volts1",
+  "Amps (amps)":                "Amps1",
+  // Fuel
+  "Wing Fuel L Qty (gal)":      "FQty1",
+  "Wing Fuel R Qty (gal)":      "FQty2",
+  "Acro Fuel Qty (gal)":        "FQty1",
+  // CHT
+  "CHT 1 (deg F)":              "E1 CHT1",
+  "CHT 2 (deg F)":              "E1 CHT2",
+  "CHT 3 (deg F)":              "E1 CHT3",
+  "CHT 4 (deg F)":              "E1 CHT4",
+  "CHT 5 (deg F)":              "E1 CHT5",
+  "CHT 6 (deg F)":              "E1 CHT6",
+  // EGT
+  "EGT 1 (deg F)":              "E1 EGT1",
+  "EGT 2 (deg F)":              "E1 EGT2",
+  "EGT 3 (deg F)":              "E1 EGT3",
+  "EGT 4 (deg F)":              "E1 EGT4",
+  "EGT 5 (deg F)":              "E1 EGT5",
+  "EGT 6 (deg F)":              "E1 EGT6",
+  // Alerts
+  "CAS Alert":                  "CAS Alert",
+};
+
+/** Build index map: canonical name → column index */
+function buildColumnMap(headers: string[]): Map<string, number> {
+  const map = new Map<string, number>();
+  headers.forEach((h, idx) => {
+    const t = h.trim();
+    if (t && !map.has(t)) map.set(t, idx);
+    const alias = COL_ALIASES[t];
+    if (alias && !map.has(alias)) map.set(alias, idx);
+  });
+  return map;
+}
+
+/** True if the field looks like a date value rather than a column name */
+function isDateLike(s: string): boolean {
+  return /^\d{1,4}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(s.trim());
+}
+
+/** Normalize M/D/YYYY → YYYY-MM-DD so DB timestamps parse correctly */
+function normalizeDate(d: string): string {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(d.trim());
+  if (m) return `${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+  return d.trim();
+}
+
 export function parseG3xCsv(csvContent: string): ParsedG3xLog {
-  const lines = csvContent.split(/\r?\n/);
+  // Strip UTF-8 BOM if present (Excel adds it)
+  const content = csvContent.replace(/^\uFEFF/, "");
+
+  const lines = content.split(/\r?\n/);
   let airframeInfo: G3xAirframeInfo = {
     product: "GDU 460",
     aircraftIdent: "",
@@ -119,99 +232,105 @@ export function parseG3xCsv(csvContent: string): ParsedG3xLog {
     engineHours: null,
   };
 
-  let headersParsed = 0;
-  let shortHeaders: string[] = [];
+  // headersSeen: how many non-# non-data lines we've consumed as headers
+  let headersSeen = 0;
+  let colMap = new Map<string, number>();
   const points: G3xPoint[] = [];
 
   for (const rawLine of lines) {
-    const line = rawLine.trim();
+    const line = normalizeExcelLine(rawLine.trim());
     if (!line) continue;
 
     if (line.startsWith("#airframe_info")) {
       airframeInfo = parseAirframeInfo(line);
       continue;
     }
-
     if (line.startsWith("#")) continue;
 
-    if (headersParsed === 0) {
-      headersParsed = 1;
+    const fields = splitCsvLine(line).map(f => f.trim());
+    if (fields.length < 2) continue;
+
+    const firstField = fields[0];
+
+    // --- Header lines: first field is alphabetic (not a date/number) ---
+    if (headersSeen < 2 && !isDateLike(firstField) && /^[A-Za-z_# ]/.test(firstField)) {
+      headersSeen++;
+      if (headersSeen === 2) {
+        // Second header = short names: these ARE the canonical names, map directly
+        colMap = buildColumnMap(fields);
+      } else {
+        // First header could be the only one (Excel format uses long names only)
+        // Build a tentative map; if a second header follows, it will override.
+        colMap = buildColumnMap(fields);
+      }
       continue;
     }
 
-    if (headersParsed === 1) {
-      shortHeaders = splitCsvLine(line).map(h => h.trim());
-      headersParsed = 2;
-      continue;
-    }
-
-    const values = splitCsvLine(line);
-    if (values.length < 5) continue;
+    // --- Data rows ---
+    if (colMap.size === 0) continue; // no headers yet, skip
 
     const get = (name: string): string => {
-      const idx = shortHeaders.indexOf(name);
-      return idx >= 0 ? (values[idx] ?? "").trim() : "";
+      const idx = colMap.get(name);
+      return idx !== undefined ? (fields[idx] ?? "") : "";
     };
 
-    const getByPartial = (partial: string): string => {
-      const idx = shortHeaders.findIndex(h => h === partial);
-      return idx >= 0 ? (values[idx] ?? "").trim() : "";
-    };
+    // Prefer local date/time; fall back to UTC (Excel-saved files use UTC columns)
+    const dateStr = get("Lcl Date") || get("UTC Date");
+    const timeStr = get("Lcl Time") || get("UTC Time");
+    if (!dateStr && !timeStr) continue;
+    const fullTime = `${normalizeDate(dateStr)} ${timeStr}`.trim();
 
-    const lclDate = get("Lcl Date");
-    const lclTime = get("Lcl Time");
-    if (!lclDate && !lclTime) continue;
-    const fullLclTime = `${lclDate} ${lclTime}`.trim();
+    const utcTime = get("UTC Time") || null;
 
-    const utcTime = get("UTC Time");
-    const alerts = getByPartial("") ;
-
-    const lastVal = values[values.length - 1]?.trim() ?? "";
-    const secondLastVal = values[values.length - 2]?.trim() ?? "";
-
-    const alertsValue = (lastVal && !lastVal.match(/^[\d.-]+$/)) ? lastVal
+    // CAS alerts: try dedicated column first, then last-field heuristic
+    const casCol = get("CAS Alert");
+    const lastVal = fields[fields.length - 1] ?? "";
+    const secondLastVal = fields[fields.length - 2] ?? "";
+    const alertsValue =
+      (casCol && casCol !== "") ? casCol
+      : (lastVal && !lastVal.match(/^[\d.-]+$/)) ? lastVal
       : (secondLastVal && !secondLastVal.match(/^[\d.-]+$/)) ? secondLastVal
       : null;
 
     const point: G3xPoint = {
-      lclTime: fullLclTime,
+      lclTime: fullTime,
       utcTime: utcTime || null,
-      lat: parseNum(get("Latitude")),
-      lon: parseNum(get("Longitude")),
-      altGps: parseNum(get("AltGPS")),
-      altP: parseNum(get("AltP")),
-      ias: parseNum(get("IAS")),
-      tas: parseNum(get("TAS")),
-      gndSpd: parseNum(get("GndSpd")),
-      trk: parseNum(get("TRK")),
-      hdg: parseNum(get("HDG")),
-      pitch: parseNum(get("Pitch")),
-      roll: parseNum(get("Roll")),
-      vspd: parseNum(get("VSpd")),
-      oat: parseNum(get("OAT")),
-      e1Rpm: parseNum(get("E1 RPM")),
-      e1Map: parseNum(get("E1 MAP")),
-      e1OilT: parseNum(get("E1 OilT")),
-      e1OilP: parseNum(get("E1 OilP")),
-      e1Fflow: parseNum(get("E1 FFlow")),
-      volts1: parseNum(get("Volts1")),
-      amps1: parseNum(get("Amps1")),
-      fqty1: parseNum(get("FQty1")),
-      fqty2: parseNum(get("FQty2")),
-      e1Cht1: parseNum(get("E1 CHT1")),
-      e1Cht2: parseNum(get("E1 CHT2")),
-      e1Cht3: parseNum(get("E1 CHT3")),
-      e1Cht4: parseNum(get("E1 CHT4")),
-      e1Cht5: parseNum(get("E1 CHT5")),
-      e1Cht6: parseNum(get("E1 CHT6")),
-      e1Egt1: parseNum(get("E1 EGT1")),
-      e1Egt2: parseNum(get("E1 EGT2")),
-      e1Egt3: parseNum(get("E1 EGT3")),
-      e1Egt4: parseNum(get("E1 EGT4")),
-      e1Egt5: parseNum(get("E1 EGT5")),
-      e1Egt6: parseNum(get("E1 EGT6")),
-      alerts: alertsValue,
-      baro: parseNum(get("Baro")),
+      lat:      parseNum(get("Latitude")),
+      lon:      parseNum(get("Longitude")),
+      altGps:   parseNum(get("AltGPS")),
+      altP:     parseNum(get("AltP")),
+      ias:      parseNum(get("IAS")),
+      tas:      parseNum(get("TAS")),
+      gndSpd:   parseNum(get("GndSpd")),
+      trk:      parseNum(get("TRK")),
+      hdg:      parseNum(get("HDG")),
+      pitch:    parseNum(get("Pitch")),
+      roll:     parseNum(get("Roll")),
+      vspd:     parseNum(get("VSpd")),
+      oat:      parseNum(get("OAT")),
+      e1Rpm:    parseNum(get("E1 RPM")),
+      e1Map:    parseNum(get("E1 MAP")),
+      e1OilT:   parseNum(get("E1 OilT")),
+      e1OilP:   parseNum(get("E1 OilP")),
+      e1Fflow:  parseNum(get("E1 FFlow")),
+      volts1:   parseNum(get("Volts1")),
+      amps1:    parseNum(get("Amps1")),
+      fqty1:    parseNum(get("FQty1")),
+      fqty2:    parseNum(get("FQty2")),
+      e1Cht1:   parseNum(get("E1 CHT1")),
+      e1Cht2:   parseNum(get("E1 CHT2")),
+      e1Cht3:   parseNum(get("E1 CHT3")),
+      e1Cht4:   parseNum(get("E1 CHT4")),
+      e1Cht5:   parseNum(get("E1 CHT5")),
+      e1Cht6:   parseNum(get("E1 CHT6")),
+      e1Egt1:   parseNum(get("E1 EGT1")),
+      e1Egt2:   parseNum(get("E1 EGT2")),
+      e1Egt3:   parseNum(get("E1 EGT3")),
+      e1Egt4:   parseNum(get("E1 EGT4")),
+      e1Egt5:   parseNum(get("E1 EGT5")),
+      e1Egt6:   parseNum(get("E1 EGT6")),
+      alerts:   alertsValue,
+      baro:     parseNum(get("Baro")),
     };
 
     points.push(point);
