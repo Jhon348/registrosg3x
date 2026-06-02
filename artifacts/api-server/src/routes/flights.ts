@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
+import * as XLSX from "xlsx";
 import { db, flightsTable, flightPointsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import {
@@ -11,6 +12,17 @@ import {
   GetFlightPointsResponse,
 } from "@workspace/api-zod";
 import { parseG3xCsv, computeFlightStats } from "../lib/g3xParser";
+
+/**
+ * Convert an Excel (.xlsx/.xls) buffer to CSV text.
+ * Reads the first sheet and exports it as CSV so the G3X parser can handle it.
+ */
+function xlsxToCsv(buffer: Buffer): string {
+  const workbook = XLSX.read(buffer, { type: "buffer", raw: true });
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) throw new Error("Excel file contains no sheets");
+  return XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]!, { blankrows: false });
+}
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -34,8 +46,22 @@ router.post("/flights/upload", upload.single("file"), async (req, res): Promise<
     return;
   }
 
-  const csvContent = req.file.buffer.toString("utf-8");
-  req.log.info({ filename: req.file.originalname, size: req.file.size }, "Parsing G3X CSV");
+  const filename = req.file.originalname.toLowerCase();
+  const isExcel = filename.endsWith(".xlsx") || filename.endsWith(".xls");
+  req.log.info({ filename: req.file.originalname, size: req.file.size, isExcel }, "Parsing G3X log");
+
+  let csvContent: string;
+  if (isExcel) {
+    try {
+      csvContent = xlsxToCsv(req.file.buffer);
+    } catch (err) {
+      req.log.error({ err }, "Failed to convert Excel to CSV");
+      res.status(400).json({ error: "No se pudo leer el archivo Excel. Asegúrese de que es un archivo .xlsx o .xls válido." });
+      return;
+    }
+  } else {
+    csvContent = req.file.buffer.toString("utf-8");
+  }
 
   let parsed;
   try {

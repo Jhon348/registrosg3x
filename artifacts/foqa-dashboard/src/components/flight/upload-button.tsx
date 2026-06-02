@@ -56,7 +56,7 @@ export function UploadButton() {
         ref={fileInputRef}
         onChange={handleFileChange}
         className="hidden"
-        accept=".csv"
+        accept=".csv,.xlsx,.xls"
       />
       <Button
         onClick={() => fileInputRef.current?.click()}
