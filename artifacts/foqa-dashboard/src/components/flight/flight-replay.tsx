@@ -540,39 +540,44 @@ export function FlightReplay({ points }: Props) {
           {/* CAS + Analysis */}
           <div style={{ padding: 12, flex: 1, overflowY: "auto" }}>
 
-            {/* Active CAS — show message + time of first appearance */}
-            <div style={sectionLabel}>CAS ACTIVOS</div>
-            {activeCAS.length === 0 ? (
-              <div style={{ color: "#1a4020", fontSize: 10, marginBottom: 10 }}>— Sin mensajes activos —</div>
+            {/* CAS panel: render ALL flight events (fixed length = casEvents.length, never changes
+                during playback). Only "isNowActive" flag changes — no DOM insertions/removals. */}
+            <div style={sectionLabel}>MENSAJES CAS</div>
+            {casEvents.length === 0 ? (
+              <div style={{ color: "#1a4020", fontSize: 10, marginBottom: 10 }}>— Sin mensajes CAS en este vuelo —</div>
             ) : (
-              <div style={{ marginBottom: 10 }}>
-                {activeCAS.map((m) => {
-                  const ev = casEvents.find(e => e.message === m);
+              <div style={{ marginBottom: 10, maxHeight: 200, overflowY: "auto" }}>
+                {casEvents.map((ev) => {
+                  const isNowActive = activeCAS.includes(ev.message);
                   return (
-                    <div key={m} style={{ background: "#2a0f00", border: "1px solid #993300", borderRadius: 3, padding: "4px 8px", marginBottom: 3, display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ color: "#ff7020", fontSize: 12, flexShrink: 0 }}>⚠</span>
-                      <span style={{ color: "#ffaa44", fontSize: 11, flex: 1 }}>{m}</span>
-                      {ev && (
-                        <span style={{ color: "#7a4020", fontSize: 9, flexShrink: 0 }}>
-                          desde {ev.firstTime} ×{ev.count}
-                        </span>
-                      )}
+                    <div key={ev.message} style={{
+                      background: isNowActive ? "#2a0f00" : "#0a1018",
+                      border: `1px solid ${isNowActive ? "#993300" : "#0f2030"}`,
+                      borderRadius: 3, padding: "4px 8px", marginBottom: 2,
+                      display: "flex", alignItems: "center", gap: 8,
+                      opacity: isNowActive ? 1 : 0.45,
+                    }}>
+                      <span style={{ fontSize: 11, flexShrink: 0, width: 14 }}>
+                        {isNowActive ? "⚠" : "·"}
+                      </span>
+                      <span style={{ color: isNowActive ? "#ffaa44" : "#5a7090", fontSize: 10, flex: 1 }}>{ev.message}</span>
+                      <span style={{ color: "#3a4a60", fontSize: 9, flexShrink: 0 }}>{ev.firstTime} ×{ev.count}</span>
                     </div>
                   );
                 })}
               </div>
             )}
 
-            {/* Smart analysis */}
+            {/* Smart analysis — fixed length (anomalies from useMemo, never changes during playback) */}
             <div style={sectionLabel}>ANÁLISIS INTELIGENTE</div>
-            <div style={{ maxHeight: 160, overflowY: "auto", marginBottom: 10 }}>
+            <div style={{ maxHeight: 180, overflowY: "auto" }}>
               {anomalies.length === 0 ? (
                 <div style={{ color: "#1a5030", fontSize: 10, padding: "4px 0" }}>✓ Sin eventos detectados</div>
               ) : anomalies.map((ev, i) => (
                 <div key={i} style={{
                   display: "flex", gap: 6, alignItems: "center", marginBottom: 3,
                   padding: "3px 8px", borderRadius: 3,
-                  background: ev.severity === "crit" ? "#1a0000" : "#100e0000",
+                  background: ev.severity === "crit" ? "#1a0000" : "#0a0e00",
                   border: `1px solid ${ev.severity === "crit" ? "#660000" : "#554400"}`,
                 }}>
                   <span style={{ fontSize: 10 }}>{ev.severity === "crit" ? "🔴" : "🟡"}</span>
@@ -582,22 +587,6 @@ export function FlightReplay({ points }: Props) {
                 </div>
               ))}
             </div>
-
-            {/* Full CAS log — all unique messages seen in the flight */}
-            {casEvents.length > 0 && (
-              <>
-                <div style={sectionLabel}>REGISTRO CAS DEL VUELO</div>
-                <div style={{ maxHeight: 120, overflowY: "auto" }}>
-                  {casEvents.map((ev, i) => (
-                    <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 2, padding: "3px 6px", borderBottom: "1px solid #0a1a28" }}>
-                      <span style={{ color: "#ffaa44", fontSize: 9, width: 54, flexShrink: 0, fontFamily: "monospace" }}>{ev.firstTime}</span>
-                      <span style={{ color: "#a07050", fontSize: 9, flex: 1 }}>{ev.message}</span>
-                      <span style={{ color: "#3a5060", fontSize: 9, flexShrink: 0 }}>×{ev.count}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
           </div>
         </div>
       </div>
