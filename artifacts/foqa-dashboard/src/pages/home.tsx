@@ -18,7 +18,7 @@ export default function Home() {
   const handleDelete = (e: React.MouseEvent, id: number) => {
     e.preventDefault();
     e.stopPropagation();
-    if (confirm("Delete this flight log?")) {
+    if (confirm("¿Eliminar este registro de vuelo?")) {
       deleteFlight.mutate(
         { id },
         {
@@ -46,10 +46,11 @@ export default function Home() {
       <div className="max-w-6xl mx-auto w-full p-6">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h2 className="text-2xl font-bold tracking-tight">Flight Logs</h2>
-            <p className="text-muted-foreground font-mono text-sm mt-1">Review performance and telemetry data</p>
+            <h2 className="text-2xl font-bold tracking-tight">Registros de vuelo</h2>
+            <p className="text-muted-foreground font-mono text-sm mt-1">Revisar el rendimiento y los datos de telemetría</p>
           </div>
-          <UploadButton />
+          {/* Solo mostrar el botón del header cuando ya hay vuelos; si no hay, el botón va en el estado vacío */}
+          {flights && flights.length > 0 && <UploadButton />}
         </div>
 
         {isLoading ? (
@@ -62,8 +63,8 @@ export default function Home() {
           <Card className="border-dashed border-2 bg-transparent text-center p-12">
             <CardContent className="flex flex-col items-center justify-center text-muted-foreground">
               <Activity className="w-12 h-12 mb-4 opacity-20" />
-              <h3 className="text-lg font-medium text-foreground mb-2">No flight data available</h3>
-              <p className="max-w-sm mb-6 text-sm">Upload a Garmin G3X CSV log file to begin analysis.</p>
+              <h3 className="text-lg font-medium text-foreground mb-2">No hay datos de vuelo disponibles</h3>
+              <p className="max-w-sm mb-6 text-sm">Para comenzar el análisis, suba un archivo de registro CSV de Garmin G3X.</p>
               <UploadButton />
             </CardContent>
           </Card>
@@ -78,16 +79,16 @@ export default function Home() {
                         <Plane className="w-6 h-6 text-primary" />
                       </div>
                       <div>
-                        <div className="font-bold text-lg">{flight.aircraftIdent || 'Unknown Aircraft'}</div>
+                        <div className="font-bold text-lg">{flight.aircraftIdent || 'Aeronave desconocida'}</div>
                         <div className="text-sm font-mono text-muted-foreground mt-1 flex items-center gap-3">
                           <span className="flex items-center gap-1">
                             <Clock className="w-3 h-3" />
-                            {flight.startTime ? format(parseISO(flight.startTime), 'MMM d, yyyy HH:mm') : 'Unknown Date'}
+                            {flight.startTime ? format(parseISO(flight.startTime), 'd MMM yyyy HH:mm') : 'Fecha desconocida'}
                           </span>
                           <span>•</span>
                           <span>{formatDuration(flight.startTime, flight.endTime)}</span>
                           <span>•</span>
-                          <span>{flight.totalPoints} points</span>
+                          <span>{flight.totalPoints} pts</span>
                         </div>
                       </div>
                     </div>
@@ -95,11 +96,11 @@ export default function Home() {
                     <div className="flex items-center gap-6">
                       <div className="flex gap-4 font-mono text-sm text-right">
                         <div className="flex flex-col">
-                          <span className="text-muted-foreground text-xs uppercase">Max Alt</span>
+                          <span className="text-muted-foreground text-xs uppercase">Alt Máx</span>
                           <span className="text-cyan-400">{flight.maxAltGps ? `${flight.maxAltGps.toFixed(0)} ft` : '--'}</span>
                         </div>
                         <div className="flex flex-col">
-                          <span className="text-muted-foreground text-xs uppercase">Max Spd</span>
+                          <span className="text-muted-foreground text-xs uppercase">Vel Máx</span>
                           <span className="text-cyan-400">{flight.maxIas ? `${flight.maxIas.toFixed(0)} kt` : '--'}</span>
                         </div>
                       </div>
