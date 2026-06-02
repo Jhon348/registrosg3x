@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { flushSync } from "react-dom";
 import { FlightPoint } from "@workspace/api-client-react";
 import { Slider } from "@/components/ui/slider";
 
@@ -407,18 +408,37 @@ export function FlightReplay({ points }: Props) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
 
+  // Refs so the interval closure always has the latest values without re-creating it
+  const indexRef = useRef(0);
+  const speedRef = useRef(1);
+  const playingRef = useRef(false);
+
+  indexRef.current = index;
+  speedRef.current = speed;
+  playingRef.current = isPlaying;
+
   const { anomalies, casEvents } = useMemo(() => analyze(points), [points]);
 
   useEffect(() => {
     if (!isPlaying || points.length === 0) return;
+
     const id = setInterval(() => {
-      setIndex(i => {
-        if (i >= points.length - 1) { setIsPlaying(false); return i; }
-        return Math.min(i + Math.max(1, speed), points.length - 1);
+      // flushSync forces React to commit this update synchronously before the next
+      // tick fires. This prevents two concurrent renders from interleaving and
+      // corrupting DOM references (the root cause of the insertBefore crash).
+      flushSync(() => {
+        setIndex(i => {
+          const next = Math.min(i + Math.max(1, speedRef.current), points.length - 1);
+          if (next >= points.length - 1) {
+            setIsPlaying(false);
+          }
+          return next;
+        });
       });
     }, 100);
+
     return () => clearInterval(id);
-  }, [isPlaying, speed, points.length]);
+  }, [isPlaying, points.length]);
 
   if (points.length === 0) {
     return (
