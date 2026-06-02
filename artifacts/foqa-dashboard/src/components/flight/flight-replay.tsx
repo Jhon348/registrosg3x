@@ -476,10 +476,16 @@ export function FlightReplay({ points }: Props) {
 
   // Forward-fill key PFD fields: when a row has NULL, hold the last known value
   // instead of falling to 0. Avoids the altimeter/IAS jumping to zero mid-flight.
+  //
+  // IMPORTANT: prefer altP (baro/pressure altitude) over altGps (WGS84).
+  // The G3X cockpit altimeter always shows baro altitude. GPS WGS84 altitude
+  // can be legitimately negative near sea-level airports due to geoid separation
+  // (e.g. −409 ft WGS84 = ~94 ft baro at Chiclayo). Using GPS alt here would
+  // display negative altitude on the tape which is incorrect for the cockpit view.
   const filledAlt = useMemo(() => {
     let last = 0;
     return points.map(p => {
-      const v = p.altGps ?? p.altP;
+      const v = p.altP ?? p.altGps;   // baro first — matches what G3X altimeter shows
       if (v != null) last = v;
       return last;
     });

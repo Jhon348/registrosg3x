@@ -44,7 +44,7 @@ function computeStats(pts: FlightPoint[]) {
 
   return {
     // Rendimiento
-    altMax: safeMax(pts.map(p => p.altGps)),
+    altMax: safeMax(pts.map(p => p.altP ?? p.altGps)),  // baro first — GPS WGS84 can be negative
     iasMax: safeMax(pts.map(p => p.ias)),
     rpmMax: safeMax(pts.map(p => p.e1Rpm)),
     mapMax: safeMax(pts.map(p => p.e1Map)),

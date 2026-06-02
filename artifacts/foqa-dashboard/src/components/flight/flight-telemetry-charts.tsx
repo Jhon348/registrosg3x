@@ -45,7 +45,7 @@ export function FlightTelemetryCharts({ points }: Props) {
           <XAxis dataKey="lclTime" hide />
           <YAxis stroke="#64748b" tick={axisStyle} />
           <Tooltip contentStyle={tooltipStyle} />
-          <Line type="monotone" dataKey="altGps" stroke="#0ea5e9" dot={false} strokeWidth={2} isAnimationActive={false} name="GPS Alt" />
+          <Line type="monotone" dataKey="altP" stroke="#0ea5e9" dot={false} strokeWidth={2} isAnimationActive={false} name="Baro Alt" />
           <Brush dataKey="lclTime" height={24} stroke="#1e293b" fill="#0b111a" tickFormatter={() => ""} />
         </LineChart>
       </ChartCard>
