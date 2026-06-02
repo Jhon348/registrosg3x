@@ -548,6 +548,25 @@ export function FlightReplay({ points }: Props) {
         <div style={{ ...borderRight, padding: 12 }}>
           <div style={sectionLabel}>PFD</div>
 
+          {/* ── Active CAS Banner — always same DOM shape, content changes ── */}
+          <div style={{
+            minHeight: 28, marginBottom: 6,
+            background: activeCAS.length > 0 ? "#2d0f00" : "transparent",
+            border: `1px solid ${activeCAS.length > 0 ? "#cc4400" : "transparent"}`,
+            borderRadius: 3, padding: activeCAS.length > 0 ? "3px 8px" : 0,
+            display: "flex", alignItems: "center", gap: 6,
+            transition: "background 0.2s",
+          }}>
+            <span style={{ color: "#ff7700", fontSize: 12, opacity: activeCAS.length > 0 ? 1 : 0, flexShrink: 0 }}>⚠</span>
+            <span style={{
+              color: "#ffaa44", fontSize: 10, fontFamily: "monospace", fontWeight: "bold",
+              opacity: activeCAS.length > 0 ? 1 : 0, letterSpacing: "0.05em",
+            }}>
+              {/* Join into single string — no variable-length child list */}
+              {activeCAS.join("  ·  ") || ""}
+            </span>
+          </div>
+
           {/* Tapes + AI row */}
           <div style={{ display: "flex", gap: 6, justifyContent: "center", alignItems: "flex-start" }}>
             <VTape value={ias} step={10} label="IAS" unit="KT" height={200}
@@ -562,19 +581,53 @@ export function FlightReplay({ points }: Props) {
             <HSI hdg={hdg} />
           </div>
 
-          {/* Data row */}
+          {/* Data row — flight */}
           <div style={{ display: "flex", justifyContent: "space-around", marginTop: 8, padding: "6px 0", borderTop: "1px solid #0f2030" }}>
             {[
               { l: "PITCH", v: `${pitch.toFixed(1)}°` },
-              { l: "ROLL", v: `${roll.toFixed(1)}°` },
-              { l: "TAS", v: p.tas ? `${p.tas.toFixed(0)} kt` : "--" },
-              { l: "OAT", v: p.oat != null ? `${p.oat.toFixed(1)}°C` : "--" },
+              { l: "ROLL",  v: `${roll.toFixed(1)}°` },
+              { l: "TAS",   v: p.tas ? `${p.tas.toFixed(0)} kt` : "--" },
+              { l: "OAT",   v: p.oat != null ? `${p.oat.toFixed(1)}°C` : "--" },
             ].map(({ l, v }) => (
               <div key={l} style={{ textAlign: "center" }}>
                 <div style={{ color: "#2a4060", fontSize: 8 }}>{l}</div>
                 <div style={{ color: "#a0c0e0", fontSize: 13, fontWeight: "bold" }}>{v}</div>
               </div>
             ))}
+          </div>
+
+          {/* Data row — electrical */}
+          <div style={{ display: "flex", justifyContent: "space-around", padding: "5px 0", borderTop: "1px solid #0f2030" }}>
+            {/* VOLTS */}
+            <div style={{ textAlign: "center" }}>
+              <div style={{ color: "#2a4060", fontSize: 8 }}>VOLTS</div>
+              <div style={{
+                color: (volts < THR.voltLowWarn || (volts > THR.voltHighWarn && volts > 0)) ? "#ffaa00" : "#00cc66",
+                fontSize: 15, fontWeight: "bold", fontFamily: "monospace",
+              }}>{volts > 0 ? volts.toFixed(1) : "--"} <span style={{ fontSize: 9, color: "#2a4060" }}>V</span></div>
+            </div>
+            {/* AMPS */}
+            <div style={{ textAlign: "center" }}>
+              <div style={{ color: "#2a4060", fontSize: 8 }}>AMPS</div>
+              <div style={{
+                color: amps < THR.ampsWarn ? "#ffaa00" : "#00cc66",
+                fontSize: 15, fontWeight: "bold", fontFamily: "monospace",
+              }}>{amps.toFixed(1)} <span style={{ fontSize: 9, color: "#2a4060" }}>A</span></div>
+            </div>
+            {/* GND SPD */}
+            <div style={{ textAlign: "center" }}>
+              <div style={{ color: "#2a4060", fontSize: 8 }}>GND SPD</div>
+              <div style={{ color: "#a0c0e0", fontSize: 13, fontWeight: "bold" }}>
+                {p.gndSpd != null ? `${p.gndSpd.toFixed(0)} kt` : "--"}
+              </div>
+            </div>
+            {/* BARO */}
+            <div style={{ textAlign: "center" }}>
+              <div style={{ color: "#2a4060", fontSize: 8 }}>BARO</div>
+              <div style={{ color: "#a0c0e0", fontSize: 13, fontWeight: "bold" }}>
+                {p.baro != null ? p.baro.toFixed(2) : "--"}
+              </div>
+            </div>
           </div>
         </div>
 
