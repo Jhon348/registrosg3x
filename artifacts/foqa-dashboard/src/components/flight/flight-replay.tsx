@@ -422,22 +422,32 @@ export function FlightReplay({ points }: Props) {
   useEffect(() => {
     if (!isPlaying || points.length === 0) return;
 
-    const id = setInterval(() => {
-      // flushSync forces React to commit this update synchronously before the next
-      // tick fires. This prevents two concurrent renders from interleaving and
-      // corrupting DOM references (the root cause of the insertBefore crash).
-      flushSync(() => {
-        setIndex(i => {
-          const next = Math.min(i + Math.max(1, speedRef.current), points.length - 1);
-          if (next >= points.length - 1) {
-            setIsPlaying(false);
-          }
-          return next;
-        });
-      });
-    }, 100);
+    // requestAnimationFrame + timestamp-based advance:
+    //   - Does NOT queue up ticks when the device is slow (unlike setInterval).
+    //     On a weak phone, setInterval at 100ms piles up calls while flushSync
+    //     is still committing the previous frame → browser kills the tab.
+    //   - RAF naturally pauses when the tab is hidden.
+    //   - flushSync still needed to prevent React 19 concurrent-mode insertBefore crash.
+    let rafId: number;
+    let lastAdvance = 0;
+    const MS_PER_STEP = 100;
 
-    return () => clearInterval(id);
+    const frame = (now: number) => {
+      if (now - lastAdvance >= MS_PER_STEP) {
+        lastAdvance = now;
+        flushSync(() => {
+          setIndex(i => {
+            const next = Math.min(i + Math.max(1, speedRef.current), points.length - 1);
+            if (next >= points.length - 1) setIsPlaying(false);
+            return next;
+          });
+        });
+      }
+      rafId = requestAnimationFrame(frame);
+    };
+
+    rafId = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(rafId);
   }, [isPlaying, points.length]);
 
   if (points.length === 0) {
