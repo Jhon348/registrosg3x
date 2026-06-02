@@ -188,9 +188,11 @@ function VTape({ value, step, label, unit, color, width = 60, height = 200 }: {
       <div style={{ position: "relative", width, height, background: "#07101f", border: "1px solid #1e3d5a", overflow: "hidden", borderRadius: 2 }}>
         {ticks.map(v => {
           const y = py(v);
-          if (y < -20 || y > height + 20) return null;
+          // Always render (never return null) — out-of-range ones are clipped by overflow:hidden
+          // Returning null changes DOM count mid-animation and triggers insertBefore errors
+          const visible = y >= -20 && y <= height + 20;
           return (
-            <div key={v} style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+            <div key={v} style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none", opacity: visible ? 1 : 0 }}>
               <div style={{ position: "absolute", top: y - 8, right: 4, color: "#8fb0d8", fontFamily: "monospace", fontSize: 10, textAlign: "right", lineHeight: "16px" }}>{v}</div>
               <div style={{ position: "absolute", top: y, left: 0, width: "40%", height: 1, background: "#1e3d5a" }} />
             </div>
@@ -228,14 +230,10 @@ function VSIBar({ vspd, height = 200 }: { vspd: number; height?: number }) {
       <div style={{ position: "relative", width: 36, height, background: "#07101f", border: "1px solid #1e3d5a", overflow: "hidden", borderRadius: 2 }}>
         {/* Center line */}
         <div style={{ position: "absolute", top: height / 2, left: 0, right: 0, height: 1, background: "#2a4060" }} />
-        {/* Up bar */}
-        {up && barH > 0 && (
-          <div style={{ position: "absolute", bottom: height / 2, left: 4, right: 4, height: barH, background: "#00c3ff", borderRadius: "2px 2px 0 0", transition: "height 0.2s" }} />
-        )}
-        {/* Down bar */}
-        {!up && barH > 0 && (
-          <div style={{ position: "absolute", top: height / 2, left: 4, right: 4, height: barH, background: "#ff6633", borderRadius: "0 0 2px 2px", transition: "height 0.2s" }} />
-        )}
+        {/* Up bar — always in DOM, height 0 when not climbing (prevents insertBefore on sign change) */}
+        <div style={{ position: "absolute", bottom: height / 2, left: 4, right: 4, height: up ? barH : 0, background: "#00c3ff", borderRadius: "2px 2px 0 0", transition: "height 0.15s" }} />
+        {/* Down bar — always in DOM, height 0 when not descending */}
+        <div style={{ position: "absolute", top: height / 2, left: 4, right: 4, height: up ? 0 : barH, background: "#ff6633", borderRadius: "0 0 2px 2px", transition: "height 0.15s" }} />
         {/* Labels */}
         {[2000, 1000, -1000, -2000].map(v => {
           const y = height / 2 - (v / MAX) * halfH;
@@ -541,30 +539,39 @@ export function FlightReplay({ points }: Props) {
           {/* CAS + Analysis */}
           <div style={{ padding: 12, flex: 1, overflowY: "auto" }}>
 
-            {/* Active CAS */}
+            {/* Active CAS — show message + time of first appearance */}
             <div style={sectionLabel}>CAS ACTIVOS</div>
             {activeCAS.length === 0 ? (
               <div style={{ color: "#1a4020", fontSize: 10, marginBottom: 10 }}>— Sin mensajes activos —</div>
             ) : (
               <div style={{ marginBottom: 10 }}>
-                {activeCAS.map((m, i) => (
-                  <div key={i} style={{ background: "#2a0f00", border: "1px solid #993300", borderRadius: 3, padding: "3px 8px", marginBottom: 2, color: "#ffaa44", fontSize: 11 }}>
-                    ⚠ {m}
-                  </div>
-                ))}
+                {activeCAS.map((m, i) => {
+                  const ev = casEvents.find(e => e.message === m);
+                  return (
+                    <div key={i} style={{ background: "#2a0f00", border: "1px solid #993300", borderRadius: 3, padding: "4px 8px", marginBottom: 3, display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ color: "#ff7020", fontSize: 12, flexShrink: 0 }}>⚠</span>
+                      <span style={{ color: "#ffaa44", fontSize: 11, flex: 1 }}>{m}</span>
+                      {ev && (
+                        <span style={{ color: "#7a4020", fontSize: 9, flexShrink: 0 }}>
+                          desde {ev.firstTime} ×{ev.count}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 
             {/* Smart analysis */}
             <div style={sectionLabel}>ANÁLISIS INTELIGENTE</div>
-            <div style={{ maxHeight: 180, overflowY: "auto", marginBottom: 10 }}>
+            <div style={{ maxHeight: 160, overflowY: "auto", marginBottom: 10 }}>
               {anomalies.length === 0 ? (
                 <div style={{ color: "#1a5030", fontSize: 10, padding: "4px 0" }}>✓ Sin eventos detectados</div>
               ) : anomalies.map((ev, i) => (
                 <div key={i} style={{
                   display: "flex", gap: 6, alignItems: "center", marginBottom: 3,
                   padding: "3px 8px", borderRadius: 3,
-                  background: ev.severity === "crit" ? "#1a0000" : "#12100000".slice(0, 9) + "1a",
+                  background: ev.severity === "crit" ? "#1a0000" : "#100e0000",
                   border: `1px solid ${ev.severity === "crit" ? "#660000" : "#554400"}`,
                 }}>
                   <span style={{ fontSize: 10 }}>{ev.severity === "crit" ? "🔴" : "🟡"}</span>
@@ -575,16 +582,16 @@ export function FlightReplay({ points }: Props) {
               ))}
             </div>
 
-            {/* CAS event log with timestamps */}
+            {/* Full CAS log — all unique messages seen in the flight */}
             {casEvents.length > 0 && (
               <>
-                <div style={sectionLabel}>REGISTRO CAS</div>
+                <div style={sectionLabel}>REGISTRO CAS DEL VUELO</div>
                 <div style={{ maxHeight: 120, overflowY: "auto" }}>
                   {casEvents.map((ev, i) => (
-                    <div key={i} style={{ display: "flex", gap: 8, marginBottom: 2, padding: "2px 4px", borderBottom: "1px solid #0a1a28" }}>
-                      <span style={{ color: "#ffaa44", fontSize: 9, width: 54, flexShrink: 0 }}>{ev.firstTime}</span>
+                    <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 2, padding: "3px 6px", borderBottom: "1px solid #0a1a28" }}>
+                      <span style={{ color: "#ffaa44", fontSize: 9, width: 54, flexShrink: 0, fontFamily: "monospace" }}>{ev.firstTime}</span>
                       <span style={{ color: "#a07050", fontSize: 9, flex: 1 }}>{ev.message}</span>
-                      <span style={{ color: "#3a5060", fontSize: 9 }}>×{ev.count}</span>
+                      <span style={{ color: "#3a5060", fontSize: 9, flexShrink: 0 }}>×{ev.count}</span>
                     </div>
                   ))}
                 </div>
