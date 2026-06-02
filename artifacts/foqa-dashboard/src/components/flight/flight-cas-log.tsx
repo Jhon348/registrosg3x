@@ -3,60 +3,42 @@ import { FlightPoint } from "@workspace/api-client-react";
 
 interface Props { points: FlightPoint[] }
 
-interface CASEvent {
+interface CASEntry {
+  time: string;
   message: string;
-  firstTime: string;
-  lastTime: string;
-  count: number;
-  durationSec: number | null;
+  type: "appeared" | "changed" | "cleared";
 }
 
-function parseSeconds(t: string): number | null {
-  const parts = t.split(":");
-  if (parts.length < 3) return null;
-  return parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseFloat(parts[2]);
-}
-
-function buildCASLog(points: FlightPoint[]): CASEvent[] {
-  const map = new Map<string, { firstTime: string; lastTime: string; count: number }>();
+function buildTimeline(points: FlightPoint[]): CASEntry[] {
+  const entries: CASEntry[] = [];
+  let prev: string | null = null;
 
   for (const p of points) {
-    if (!p.alerts) continue;
-    const time = p.lclTime?.split(" ")[1] ?? "--:--:--";
-    for (const raw of p.alerts.split("/")) {
-      const msg = raw.trim();
-      if (!msg) continue;
-      const existing = map.get(msg);
-      if (existing) {
-        existing.count++;
-        existing.lastTime = time;
-      } else {
-        map.set(msg, { firstTime: time, lastTime: time, count: 1 });
+    const msg = p.alerts?.trim() || null;
+    if (msg === prev) continue; // no change
+
+    const time = p.lclTime?.split(" ")[1] ?? p.lclTime ?? "--:--:--";
+
+    if (msg === null || msg === "") {
+      if (prev !== null) {
+        entries.push({ time, message: "", type: "cleared" });
       }
+    } else if (prev === null || prev === "") {
+      entries.push({ time, message: msg, type: "appeared" });
+    } else {
+      entries.push({ time, message: msg, type: "changed" });
     }
+
+    prev = msg;
   }
 
-  return Array.from(map.entries())
-    .map(([message, ev]) => {
-      const s1 = parseSeconds(ev.firstTime);
-      const s2 = parseSeconds(ev.lastTime);
-      const durationSec = s1 !== null && s2 !== null ? Math.abs(s2 - s1) : null;
-      return { message, ...ev, durationSec };
-    })
-    .sort((a, b) => a.firstTime.localeCompare(b.firstTime));
-}
-
-function fmtDuration(sec: number | null): string {
-  if (sec === null) return "—";
-  if (sec < 60) return `${sec}s`;
-  const m = Math.floor(sec / 60), s = sec % 60;
-  return `${m}m ${s}s`;
+  return entries;
 }
 
 export function FlightCASLog({ points }: Props) {
-  const events = useMemo(() => buildCASLog(points), [points]);
+  const timeline = useMemo(() => buildTimeline(points), [points]);
 
-  if (events.length === 0) {
+  if (timeline.length === 0) {
     return (
       <div className="p-8 text-center text-muted-foreground font-mono text-sm">
         ✓ No se registraron mensajes CAS en este vuelo.
@@ -64,67 +46,78 @@ export function FlightCASLog({ points }: Props) {
     );
   }
 
+  const activeCount  = timeline.filter(e => e.type !== "cleared").length;
+  const clearCount   = timeline.filter(e => e.type === "cleared").length;
+
   return (
-    <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="p-4 space-y-4" translate="no">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="text-sm font-bold text-muted-foreground uppercase tracking-widest">
-          Registro CAS del Vuelo
+          Registro CAS — cronológico
         </h3>
-        <span className="text-xs font-mono text-muted-foreground bg-card border border-border px-3 py-1 rounded">
-          {events.length} mensaje{events.length !== 1 ? "s" : ""} únicos
-        </span>
+        <div className="flex gap-2 text-xs font-mono">
+          <span className="bg-amber-500/20 text-amber-400 border border-amber-500/30 px-3 py-1 rounded">
+            {activeCount} eventos
+          </span>
+          <span className="bg-card text-muted-foreground border border-border px-3 py-1 rounded">
+            {clearCount} despejes
+          </span>
+        </div>
       </div>
 
       <div className="bg-card rounded-md border border-border overflow-hidden">
-        {/* Table header */}
-        <div className="grid text-[10px] font-bold text-muted-foreground uppercase tracking-widest border-b border-border bg-muted/30 px-4 py-2"
-          style={{ gridTemplateColumns: "90px 90px 90px 1fr 60px 80px" }}>
-          <span>Primera vez</span>
-          <span>Última vez</span>
-          <span>Duración</span>
-          <span>Mensaje</span>
-          <span className="text-right">Ocurr.</span>
-          <span className="text-right">Estado</span>
+        {/* Header */}
+        <div
+          className="grid text-[10px] font-bold text-muted-foreground uppercase tracking-widest border-b border-border bg-muted/30 px-4 py-2"
+          style={{ gridTemplateColumns: "90px 16px 1fr" }}
+        >
+          <span>Hora</span>
+          <span />
+          <span>Mensaje CAS</span>
         </div>
 
         {/* Rows */}
         <div className="divide-y divide-border">
-          {events.map((ev, i) => {
-            const isActive = points.length > 0 &&
-              points[points.length - 1].alerts?.includes(ev.message);
+          {timeline.map((entry, i) => {
+            const isCleared = entry.type === "cleared";
             return (
               <div
                 key={i}
-                className="grid px-4 py-3 hover:bg-muted/20 transition-colors"
-                style={{ gridTemplateColumns: "90px 90px 90px 1fr 60px 80px", alignItems: "center" }}
+                className={`grid px-4 py-2.5 items-center ${
+                  isCleared ? "opacity-50" : "hover:bg-muted/20"
+                } transition-colors`}
+                style={{ gridTemplateColumns: "90px 16px 1fr" }}
               >
-                <span className="font-mono text-xs text-amber-400">{ev.firstTime}</span>
-                <span className="font-mono text-xs text-muted-foreground">{ev.lastTime}</span>
-                <span className="font-mono text-xs text-muted-foreground">{fmtDuration(ev.durationSec)}</span>
-                <span className="font-mono text-xs text-foreground pr-2">{ev.message}</span>
-                <span className="font-mono text-xs text-right text-muted-foreground">×{ev.count}</span>
-                <span className="text-right">
-                  {isActive ? (
-                    <span className="text-[10px] font-mono bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded">
-                      ACTIVO
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-mono text-muted-foreground/50">resuelto</span>
-                  )}
+                {/* Time */}
+                <span className="font-mono text-xs text-amber-400">
+                  {entry.time}
                 </span>
+
+                {/* Indicator dot */}
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    isCleared
+                      ? "bg-muted-foreground/30"
+                      : entry.type === "appeared"
+                      ? "bg-amber-400"
+                      : "bg-orange-400"
+                  }`}
+                />
+
+                {/* Message — verbatim from log */}
+                {isCleared ? (
+                  <span className="font-mono text-xs text-muted-foreground italic">
+                    (despejado)
+                  </span>
+                ) : (
+                  <span className="font-mono text-xs text-foreground">
+                    {entry.message}
+                  </span>
+                )}
               </div>
             );
           })}
         </div>
-      </div>
-
-      {/* Summary pills */}
-      <div className="flex flex-wrap gap-2 pt-2">
-        {events.map((ev, i) => (
-          <span key={i} className="text-[10px] font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-1 rounded">
-            {ev.firstTime} · {ev.message}
-          </span>
-        ))}
       </div>
     </div>
   );

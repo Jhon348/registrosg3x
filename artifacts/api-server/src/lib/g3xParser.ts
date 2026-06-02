@@ -282,15 +282,24 @@ export function parseG3xCsv(csvContent: string): ParsedG3xLog {
 
     const utcTime = get("UTC Time") || null;
 
-    // CAS alerts: try dedicated column first, then last-field heuristic
+    // CAS alerts:
+    // - If the column map has a dedicated "CAS Alert" column (Excel/long-header format),
+    //   use ONLY that — no heuristic. Prevents "Terrain Alert" values (EDRC, EDRW, ITIW)
+    //   from leaking into the CAS field.
+    // - If there is no dedicated column (native short-header format), fall back to the
+    //   last-non-numeric-field heuristic that worked before.
     const casCol = get("CAS Alert");
-    const lastVal = fields[fields.length - 1] ?? "";
-    const secondLastVal = fields[fields.length - 2] ?? "";
-    const alertsValue =
-      (casCol && casCol !== "") ? casCol
-      : (lastVal && !lastVal.match(/^[\d.-]+$/)) ? lastVal
-      : (secondLastVal && !secondLastVal.match(/^[\d.-]+$/)) ? secondLastVal
-      : null;
+    let alertsValue: string | null;
+    if (colMap.has("CAS Alert")) {
+      alertsValue = (casCol && casCol !== "") ? casCol : null;
+    } else {
+      const lastVal = fields[fields.length - 1] ?? "";
+      const secondLastVal = fields[fields.length - 2] ?? "";
+      alertsValue =
+        (lastVal && !lastVal.match(/^[\d.-]+$/)) ? lastVal
+        : (secondLastVal && !secondLastVal.match(/^[\d.-]+$/)) ? secondLastVal
+        : null;
+    }
 
     const point: G3xPoint = {
       lclTime: fullTime,
