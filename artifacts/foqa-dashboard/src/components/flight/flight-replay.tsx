@@ -33,18 +33,25 @@ const THR = {
 function analyze(pts: FlightPoint[]) {
   const anomalies: Anomaly[] = [];
   const casMap = new Map<string, CASEvent>();
+  // Per-timestamp set of active alerts (multiple rows share the same lclTime)
+  const casActiveByTime = new Map<string, Set<string>>();
   const triggered: Record<string, boolean> = {};
 
   for (const p of pts) {
     const t = p.lclTime?.split(" ")[1] ?? "--:--";
+    const ts = p.lclTime ?? "";
 
     if (p.alerts) {
       for (const raw of p.alerts.split("/")) {
         const msg = raw.trim();
         if (!msg) continue;
+        // Global CAS event registry
         const existing = casMap.get(msg);
         if (existing) existing.count++;
         else casMap.set(msg, { message: msg, firstTime: t, count: 1 });
+        // Per-timestamp active set
+        if (!casActiveByTime.has(ts)) casActiveByTime.set(ts, new Set());
+        casActiveByTime.get(ts)!.add(msg);
       }
     }
 
@@ -87,7 +94,7 @@ function analyze(pts: FlightPoint[]) {
     }
   }
 
-  return { anomalies, casEvents: Array.from(casMap.values()) };
+  return { anomalies, casEvents: Array.from(casMap.values()), casActiveByTime };
 }
 
 // ── Attitude Indicator ──────────────────────────────────────────────────
@@ -465,7 +472,7 @@ export function FlightReplay({ points }: Props) {
   speedRef.current = speed;
   playingRef.current = isPlaying;
 
-  const { anomalies, casEvents } = useMemo(() => analyze(points), [points]);
+  const { anomalies, casEvents, casActiveByTime } = useMemo(() => analyze(points), [points]);
 
   useEffect(() => {
     if (!isPlaying || points.length === 0) return;
@@ -524,9 +531,8 @@ export function FlightReplay({ points }: Props) {
   const cht   = Math.max(p.e1Cht1 ?? 0, p.e1Cht2 ?? 0, p.e1Cht3 ?? 0, p.e1Cht4 ?? 0, p.e1Cht5 ?? 0, p.e1Cht6 ?? 0);
   const egt   = Math.max(p.e1Egt1 ?? 0, p.e1Egt2 ?? 0, p.e1Egt3 ?? 0, p.e1Egt4 ?? 0, p.e1Egt5 ?? 0, p.e1Egt6 ?? 0);
 
-  const activeCAS = p.alerts
-    ? p.alerts.split("/").map(s => s.trim()).filter(Boolean)
-    : [];
+  // All alerts active at the current timestamp (multiple DB rows share the same lclTime)
+  const activeCAS = Array.from(casActiveByTime.get(p.lclTime ?? "") ?? []);
 
   const panelBg = { background: "#050e1e" };
   const borderRight = { borderRight: "1px solid #1e3d5a" };
