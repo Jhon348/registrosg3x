@@ -107,11 +107,11 @@ export function FlightSummary({ points, loading }: Props) {
   const f = (v: number | null, dec = 0) => v !== null ? v.toFixed(dec) : null;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4" translate="no">
 
       {/* ── Rendimiento de Vuelo ── */}
       <SectionCard title="Rendimiento de Vuelo">
-        <Row label="ALT MÁX" value={f(stats.altMax)} unit="pies" />
+        <Row label="ALT MÁX" value={f(stats.altMax)} unit="ft" />
         <Row label="IAS MÁX" value={f(stats.iasMax)} unit="kt" />
         <Row label="RPM MÁX" value={f(stats.rpmMax)} unit="RPM" />
         <Row label="MAP MÁX" value={f(stats.mapMax, 1)} unit="inHg" />
