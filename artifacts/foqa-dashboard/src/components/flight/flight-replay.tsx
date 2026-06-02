@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { flushSync } from "react-dom";
 import { FlightPoint } from "@workspace/api-client-react";
 import { Slider } from "@/components/ui/slider";
 
@@ -435,12 +434,13 @@ export function FlightReplay({ points }: Props) {
     const frame = (now: number) => {
       if (now - lastAdvance >= MS_PER_STEP) {
         lastAdvance = now;
-        flushSync(() => {
-          setIndex(i => {
-            const next = Math.min(i + Math.max(1, speedRef.current), points.length - 1);
-            if (next >= points.length - 1) setIsPlaying(false);
-            return next;
-          });
+        // No flushSync — RAF throttle at 100ms means only one setIndex is ever
+        // in-flight at a time, so React never has concurrent renders to interleave.
+        // flushSync blocked the main thread 100-300ms per frame on slow devices.
+        setIndex(i => {
+          const next = Math.min(i + Math.max(1, speedRef.current), points.length - 1);
+          if (next >= points.length - 1) setIsPlaying(false);
+          return next;
         });
       }
       rafId = requestAnimationFrame(frame);
