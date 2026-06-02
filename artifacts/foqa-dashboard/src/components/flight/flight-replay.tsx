@@ -367,6 +367,55 @@ function ArcGauge({ label, value, min, max, unit, green, yellows, red, dec = 0 }
   );
 }
 
+// ── Electrical Bar Instrument ────────────────────────────────────────────
+// Horizontal G3X-style bar: color-coded zones + moving needle + digital readout
+function ElecBar({ label, value, min, max, unit, greenLo, greenHi, warnLo, warnHi, dec = 1 }: {
+  label: string; value: number; min: number; max: number; unit: string;
+  greenLo: number; greenHi: number; warnLo?: [number, number]; warnHi?: [number, number]; dec?: number;
+}) {
+  const pct = (v: number) => Math.max(0, Math.min(1, (v - min) / (max - min)));
+  const needle = pct(value);
+  const inWarnLo = warnLo && value >= warnLo[0] && value <= warnLo[1];
+  const inWarnHi = warnHi && value >= warnHi[0] && value <= warnHi[1];
+  const color = (inWarnLo || inWarnHi) ? "#ffaa00" : "#00cc66";
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+      {/* Label */}
+      <div style={{ color: "#4878a8", fontSize: 9, fontFamily: "monospace", width: 36, textAlign: "right", flexShrink: 0 }}>{label}</div>
+
+      {/* Bar track */}
+      <div style={{ flex: 1, position: "relative", height: 16, background: "#06101e", border: "1px solid #162840", borderRadius: 2, overflow: "hidden" }}>
+        {/* low-warn zone */}
+        {warnLo && (
+          <div style={{ position: "absolute", top: 0, bottom: 0, left: `${pct(warnLo[0]) * 100}%`, width: `${(pct(warnLo[1]) - pct(warnLo[0])) * 100}%`, background: "#ffaa0025" }} />
+        )}
+        {/* green zone */}
+        <div style={{ position: "absolute", top: 0, bottom: 0, left: `${pct(greenLo) * 100}%`, width: `${(pct(greenHi) - pct(greenLo)) * 100}%`, background: "#00cc6620" }} />
+        {/* high-warn zone */}
+        {warnHi && (
+          <div style={{ position: "absolute", top: 0, bottom: 0, left: `${pct(warnHi[0]) * 100}%`, width: `${(pct(warnHi[1]) - pct(warnHi[0])) * 100}%`, background: "#ffaa0025" }} />
+        )}
+        {/* green left edge tick */}
+        <div style={{ position: "absolute", top: 0, bottom: 0, left: `${pct(greenLo) * 100}%`, width: 1, background: "#00cc6666" }} />
+        {/* green right edge tick */}
+        <div style={{ position: "absolute", top: 0, bottom: 0, left: `${pct(greenHi) * 100}%`, width: 1, background: "#00cc6666" }} />
+        {/* needle */}
+        <div style={{ position: "absolute", top: 0, bottom: 0, width: 2, left: `calc(${needle * 100}% - 1px)`, background: color, boxShadow: `0 0 4px ${color}` }} />
+        {/* min/max labels */}
+        <div style={{ position: "absolute", left: 3, top: 2, fontSize: 7, color: "#2a4060", fontFamily: "monospace" }}>{min}</div>
+        <div style={{ position: "absolute", right: 3, top: 2, fontSize: 7, color: "#2a4060", fontFamily: "monospace" }}>{max}</div>
+      </div>
+
+      {/* Digital readout */}
+      <div style={{ color, fontSize: 15, fontFamily: "monospace", fontWeight: "bold", width: 44, textAlign: "right", flexShrink: 0 }}>
+        {value.toFixed(dec)}
+      </div>
+      <div style={{ color: "#2a4060", fontSize: 9, fontFamily: "monospace", width: 14, flexShrink: 0 }}>{unit}</div>
+    </div>
+  );
+}
+
 // ── Playback Controls ───────────────────────────────────────────────────
 function Controls({ index, total, isPlaying, speed, onToggle, onSeek, onSkip, onSpeed }: {
   index: number; total: number; isPlaying: boolean; speed: number;
@@ -549,7 +598,7 @@ export function FlightReplay({ points }: Props) {
                 green={[100, 245]}
                 red={[[50, 100], [245, 300]]} />
             </div>
-            {/* Row 2: CHT max · EGT max · VOLTS · AMPS */}
+            {/* Row 2: CHT max · EGT max · FF */}
             <div style={{ display: "flex", justifyContent: "center", gap: 2 }}>
               <ArcGauge label="CHT" value={cht} min={0} max={550} unit="°F"
                 yellows={[[100, 200]]}
@@ -558,13 +607,26 @@ export function FlightReplay({ points }: Props) {
               <ArcGauge label="EGT" value={egt} min={800} max={1700} unit="°F"
                 green={[1100, 1550]}
                 red={[[1550, 1700]]} />
-              <ArcGauge label="VOLTS" value={volts} min={10} max={17} unit="V"
-                green={[12.4, 15.5]}
-                yellows={[[10, 12.4], [15.5, 17]]} dec={1} />
-              <ArcGauge label="AMPS" value={amps} min={-10} max={70} unit="A"
-                green={[1, 60]}
-                yellows={[[-10, 0]]} />
+              <ArcGauge label="FF" value={fflow} min={0} max={20} unit="GPH"
+                green={[1, 16]} dec={1} />
             </div>
+          </div>
+
+          {/* ── ELECTRICAL ── */}
+          <div style={{ padding: "8px 14px", ...borderBottom }}>
+            <div style={sectionLabel}>ELECTRICAL</div>
+            <ElecBar
+              label="VOLTS" value={volts} min={10} max={17} unit="V"
+              greenLo={12.4} greenHi={15.5}
+              warnLo={[10, 12.4]} warnHi={[15.5, 17]}
+              dec={1}
+            />
+            <ElecBar
+              label="AMPS" value={amps} min={-10} max={70} unit="A"
+              greenLo={1} greenHi={60}
+              warnLo={[-10, 0]}
+              dec={1}
+            />
           </div>
 
           {/* CAS + Analysis */}
