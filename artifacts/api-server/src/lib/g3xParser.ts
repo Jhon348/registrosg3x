@@ -34,6 +34,7 @@ export interface G3xPoint {
   amps1: number | null;
   fqty1: number | null;
   fqty2: number | null;
+  fqtyAcro: number | null;
   e1Cht1: number | null;
   e1Cht2: number | null;
   e1Cht3: number | null;
@@ -175,7 +176,7 @@ const COL_ALIASES: Record<string, string> = {
   // Fuel
   "Wing Fuel L Qty (gal)":      "FQty1",
   "Wing Fuel R Qty (gal)":      "FQty2",
-  "Acro Fuel Qty (gal)":        "FQty1",
+  "Acro Fuel Qty (gal)":        "FQtyAcro",
   // CHT
   "CHT 1 (deg F)":              "E1 CHT1",
   "CHT 2 (deg F)":              "E1 CHT2",
@@ -326,6 +327,7 @@ export function parseG3xCsv(csvContent: string): ParsedG3xLog {
       amps1:    parseNum(get("Amps1")),
       fqty1:    parseNum(get("FQty1")),
       fqty2:    parseNum(get("FQty2")),
+      fqtyAcro: parseNum(get("FQtyAcro")),
       e1Cht1:   parseNum(get("E1 CHT1")),
       e1Cht2:   parseNum(get("E1 CHT2")),
       e1Cht3:   parseNum(get("E1 CHT3")),

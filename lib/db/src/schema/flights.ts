@@ -53,6 +53,7 @@ export const flightPointsTable = pgTable("flight_points", {
   amps1: real("amps1"),
   fqty1: real("fqty1"),
   fqty2: real("fqty2"),
+  fqtyAcro: real("fqty_acro"),
   e1Cht1: real("e1_cht1"),
   e1Cht2: real("e1_cht2"),
   e1Cht3: real("e1_cht3"),

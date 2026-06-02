@@ -254,6 +254,8 @@ components:
           type: ["number", "null"]
         fqty2:
           type: ["number", "null"]
+        fqtyAcro:
+          type: ["number", "null"]
         e1Cht1:
           type: ["number", "null"]
         e1Cht2:

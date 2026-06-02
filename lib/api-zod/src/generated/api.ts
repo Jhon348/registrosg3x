@@ -112,6 +112,7 @@ export const GetFlightPointsResponseItem = zod.object({
   "amps1": zod.number().nullish(),
   "fqty1": zod.number().nullish(),
   "fqty2": zod.number().nullish(),
+  "fqtyAcro": zod.number().nullish(),
   "e1Cht1": zod.number().nullish(),
   "e1Cht2": zod.number().nullish(),
   "e1Cht3": zod.number().nullish(),

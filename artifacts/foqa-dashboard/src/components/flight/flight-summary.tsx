@@ -62,6 +62,7 @@ function computeStats(pts: FlightPoint[]) {
     ffMax: safeMax(pts.map(p => p.e1Fflow)),
     fqty1Min: safeMin(pts.map(p => p.fqty1), -1),
     fqty2Min: safeMin(pts.map(p => p.fqty2), -1),
+    fqtyAcroMin: safeMin(pts.map(p => p.fqtyAcro), -1),
     // Cilindros
     chtMax, egtMax, deltaChT, egtSpread,
     hotCyl: hotCylIdx + 1,
@@ -149,12 +150,17 @@ export function FlightSummary({ points, loading }: Props) {
           value={f(stats.ffMax, 1)} unit="gal/h" />
         <Row label="Flujo Comb. Mínimo"
           value={f(stats.ffMin, 1)} unit="gal/h" />
-        <Row label="Tanque 1 Mín"
+        <Row label="Tanque Ala Izq. Mín"
           value={f(stats.fqty1Min, 1)} unit="gal"
           alert={(stats.fqty1Min ?? 99) < 7} />
-        <Row label="Tanque 2 Mín"
+        <Row label="Tanque Ala Der. Mín"
           value={f(stats.fqty2Min, 1)} unit="gal"
           alert={(stats.fqty2Min ?? 99) < 7} />
+        {stats.fqtyAcroMin !== null && (
+          <Row label="Acrotanque Mín"
+            value={f(stats.fqtyAcroMin, 1)} unit="gal"
+            alert={(stats.fqtyAcroMin ?? 99) < 1} />
+        )}
       </SectionCard>
 
       {/* ── Cilindros ── */}

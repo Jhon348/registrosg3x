@@ -57,6 +57,8 @@ export interface FlightPoint {
   /** @nullable */
   fqty2?: number | null;
   /** @nullable */
+  fqtyAcro?: number | null;
+  /** @nullable */
   e1Cht1?: number | null;
   /** @nullable */
   e1Cht2?: number | null;
