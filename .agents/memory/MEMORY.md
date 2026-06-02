@@ -1,0 +1,1 @@
+- [React 19 insertBefore fix](react19-insertbefore.md) — fixed-size arrays with integer keys required for animated list components in concurrent mode

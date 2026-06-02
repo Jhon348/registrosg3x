@@ -5,6 +5,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FlightTelemetryCharts } from "@/components/flight/flight-telemetry-charts";
 import { FlightEngineCharts } from "@/components/flight/flight-engine-charts";
 import { FlightReplay } from "@/components/flight/flight-replay";
+import { FlightVoltageChart } from "@/components/flight/flight-voltage-chart";
+import { FlightCASLog } from "@/components/flight/flight-cas-log";
 import { AlertTriangle, ArrowLeft, Loader2, Calendar } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -129,15 +131,21 @@ export default function FlightDetail() {
         </div>
 
         <Tabs defaultValue="replay" className="w-full">
-          <TabsList className="w-full justify-start bg-card border-b border-border rounded-none p-0 h-auto">
-            <TabsTrigger value="replay" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary px-8 py-4 font-mono uppercase text-sm tracking-wider">
+          <TabsList className="w-full justify-start bg-card border-b border-border rounded-none p-0 h-auto flex-wrap">
+            <TabsTrigger value="replay" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary px-6 py-4 font-mono uppercase text-sm tracking-wider">
               Replay G3X
             </TabsTrigger>
-            <TabsTrigger value="telemetry" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary px-8 py-4 font-mono uppercase text-sm tracking-wider">
+            <TabsTrigger value="telemetry" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary px-6 py-4 font-mono uppercase text-sm tracking-wider">
               Telemetría
             </TabsTrigger>
-            <TabsTrigger value="engine" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary px-8 py-4 font-mono uppercase text-sm tracking-wider">
+            <TabsTrigger value="engine" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary px-6 py-4 font-mono uppercase text-sm tracking-wider">
               Motor
+            </TabsTrigger>
+            <TabsTrigger value="voltage" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary px-6 py-4 font-mono uppercase text-sm tracking-wider">
+              Voltaje
+            </TabsTrigger>
+            <TabsTrigger value="cas" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary px-6 py-4 font-mono uppercase text-sm tracking-wider">
+              Mensajes CAS
             </TabsTrigger>
           </TabsList>
 
@@ -149,6 +157,12 @@ export default function FlightDetail() {
           </TabsContent>
           <TabsContent value="engine" className="mt-6 m-0 focus-visible:outline-none">
             {loadingPoints ? <TabLoading /> : <FlightEngineCharts points={safePoints} />}
+          </TabsContent>
+          <TabsContent value="voltage" className="mt-6 m-0 focus-visible:outline-none">
+            {loadingPoints ? <TabLoading /> : <FlightVoltageChart points={safePoints} />}
+          </TabsContent>
+          <TabsContent value="cas" className="mt-6 m-0 focus-visible:outline-none">
+            {loadingPoints ? <TabLoading /> : <FlightCASLog points={safePoints} />}
           </TabsContent>
         </Tabs>
       </div>

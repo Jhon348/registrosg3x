@@ -168,37 +168,39 @@ function AttitudeIndicator({ pitch, roll }: { pitch: number; roll: number }) {
 }
 
 // ── Vertical Tape ───────────────────────────────────────────────────────
+// IMPORTANT: uses a FIXED-SIZE array (NUM_TICKS slots) with stable integer keys 0..N-1
+// so React never inserts/removes DOM nodes during animation — only content updates.
+// Variable-length arrays with value-based keys cause insertBefore crashes in React 19.
+const NUM_TICKS = 24;
+
 function VTape({ value, step, label, unit, color, width = 60, height = 200 }: {
   value: number; step: number; label: string; unit: string; color: string; width?: number; height?: number;
 }) {
-  const PX = height / (step * 12); // ~12 steps visible
-  const range = Math.ceil(height / PX / 2 / step) * step + step;
-  const min = Math.max(0, Math.floor((value - range) / step) * step);
-  const max = Math.ceil((value + range) / step) * step;
-  const ticks: number[] = [];
-  for (let v = min; v <= max; v += step) ticks.push(v);
+  const PX = height / (step * 12); // pixels per unit value
+  // Snap base to nearest step so ticks stay centered as value scrolls
+  const base = Math.round(value / step) * step;
+  const half = Math.floor(NUM_TICKS / 2);
 
-  // higher values appear ABOVE center
-  // position of tick v: H/2 - (v - value) * PX
+  // py: y-position of a given value (higher = up)
   const py = (v: number) => height / 2 - (v - value) * PX;
 
   return (
     <div style={{ width, display: "flex", flexDirection: "column", alignItems: "center" }}>
       <div style={{ color: "#6090c0", fontSize: 9, fontFamily: "monospace", marginBottom: 2 }}>{label}</div>
       <div style={{ position: "relative", width, height, background: "#07101f", border: "1px solid #1e3d5a", overflow: "hidden", borderRadius: 2 }}>
-        {ticks.map(v => {
+        {/* Fixed NUM_TICKS slots — keys are always 0..N-1, never inserted/removed */}
+        {Array.from({ length: NUM_TICKS }, (_, i) => {
+          const v = base + (i - half) * step;
           const y = py(v);
-          // Always render (never return null) — out-of-range ones are clipped by overflow:hidden
-          // Returning null changes DOM count mid-animation and triggers insertBefore errors
-          const visible = y >= -20 && y <= height + 20;
+          const visible = v >= 0 && y >= -16 && y <= height + 16;
           return (
-            <div key={v} style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none", opacity: visible ? 1 : 0 }}>
-              <div style={{ position: "absolute", top: y - 8, right: 4, color: "#8fb0d8", fontFamily: "monospace", fontSize: 10, textAlign: "right", lineHeight: "16px" }}>{v}</div>
-              <div style={{ position: "absolute", top: y, left: 0, width: "40%", height: 1, background: "#1e3d5a" }} />
+            <div key={i} style={{ position: "absolute", top: y - 8, left: 0, right: 0, height: 16, pointerEvents: "none", opacity: visible ? 1 : 0 }}>
+              <div style={{ position: "absolute", top: 8, left: 0, width: "35%", height: 1, background: "#1e3d5a" }} />
+              <div style={{ position: "absolute", top: 0, right: 3, color: "#8fb0d8", fontFamily: "monospace", fontSize: 9, textAlign: "right", lineHeight: "16px" }}>{v}</div>
             </div>
           );
         })}
-        {/* Center bug */}
+        {/* Center bug — always present, just updates text */}
         <div style={{
           position: "absolute", top: height / 2 - 13, left: 0, right: 0, height: 26,
           background: "#050e1e", border: `2px solid ${color}`,
@@ -208,7 +210,6 @@ function VTape({ value, step, label, unit, color, width = 60, height = 200 }: {
             {Math.round(value)}
           </span>
         </div>
-        {/* Trend chevrons */}
         <div style={{ position: "absolute", top: height / 2 - 13, left: 2, fontSize: 10, color: color, opacity: 0.5 }}>▶</div>
       </div>
       <div style={{ color: "#4060a0", fontSize: 8, fontFamily: "monospace", marginTop: 2 }}>{unit}</div>
@@ -545,10 +546,10 @@ export function FlightReplay({ points }: Props) {
               <div style={{ color: "#1a4020", fontSize: 10, marginBottom: 10 }}>— Sin mensajes activos —</div>
             ) : (
               <div style={{ marginBottom: 10 }}>
-                {activeCAS.map((m, i) => {
+                {activeCAS.map((m) => {
                   const ev = casEvents.find(e => e.message === m);
                   return (
-                    <div key={i} style={{ background: "#2a0f00", border: "1px solid #993300", borderRadius: 3, padding: "4px 8px", marginBottom: 3, display: "flex", alignItems: "center", gap: 8 }}>
+                    <div key={m} style={{ background: "#2a0f00", border: "1px solid #993300", borderRadius: 3, padding: "4px 8px", marginBottom: 3, display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ color: "#ff7020", fontSize: 12, flexShrink: 0 }}>⚠</span>
                       <span style={{ color: "#ffaa44", fontSize: 11, flex: 1 }}>{m}</span>
                       {ev && (
