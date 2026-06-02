@@ -474,6 +474,33 @@ export function FlightReplay({ points }: Props) {
 
   const { anomalies, casEvents, casActiveByTime } = useMemo(() => analyze(points), [points]);
 
+  // Forward-fill key PFD fields: when a row has NULL, hold the last known value
+  // instead of falling to 0. Avoids the altimeter/IAS jumping to zero mid-flight.
+  const filledAlt = useMemo(() => {
+    let last = 0;
+    return points.map(p => {
+      const v = p.altGps ?? p.altP;
+      if (v != null) last = v;
+      return last;
+    });
+  }, [points]);
+
+  const filledIas = useMemo(() => {
+    let last = 0;
+    return points.map(p => {
+      if (p.ias != null) last = p.ias;
+      return last;
+    });
+  }, [points]);
+
+  const filledVspd = useMemo(() => {
+    let last = 0;
+    return points.map(p => {
+      if (p.vspd != null) last = p.vspd;
+      return last;
+    });
+  }, [points]);
+
   useEffect(() => {
     if (!isPlaying || points.length === 0) return;
 
@@ -518,9 +545,9 @@ export function FlightReplay({ points }: Props) {
   const pitch = p.pitch ?? 0;
   const roll = p.roll ?? 0;
   const hdg = p.hdg ?? 0;
-  const ias = p.ias ?? 0;
-  const alt = p.altGps ?? p.altP ?? 0;
-  const vspd = p.vspd ?? 0;
+  const ias   = filledIas[index]  ?? 0;
+  const alt   = filledAlt[index]  ?? 0;
+  const vspd  = filledVspd[index] ?? 0;
   const rpm   = p.e1Rpm   ?? 0;
   const map   = p.e1Map   ?? 0;
   const oilP  = p.e1OilP  ?? 0;
