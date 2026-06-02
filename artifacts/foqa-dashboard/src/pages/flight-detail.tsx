@@ -7,6 +7,7 @@ import { FlightEngineCharts } from "@/components/flight/flight-engine-charts";
 import { FlightReplay } from "@/components/flight/flight-replay";
 import { FlightVoltageChart } from "@/components/flight/flight-voltage-chart";
 import { FlightCASLog } from "@/components/flight/flight-cas-log";
+import { FlightSummary } from "@/components/flight/flight-summary";
 import { AlertTriangle, ArrowLeft, Loader2, Calendar } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -116,19 +117,8 @@ export default function FlightDetail() {
           </div>
         )}
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <StatBox label="MAX ALT" value={flight.maxAltGps?.toFixed(0)} unit="FT" />
-          <StatBox label="MAX IAS" value={flight.maxIas?.toFixed(0)} unit="KT" />
-          <StatBox label="MAX RPM" value={flight.maxRpm?.toFixed(0)} unit="RPM" />
-          <StatBox
-            label="MAX EGT"
-            value={flight.maxEgt?.toFixed(0)}
-            unit="°F"
-            alert={(flight.maxEgt || 0) > 1500}
-          />
-          <StatBox label="FUEL USED" value={flight.fuelUsed?.toFixed(1)} unit="GAL" />
-        </div>
+        {/* Detailed flight summary — computed from telemetry points */}
+        <FlightSummary points={safePoints} loading={loadingPoints} />
 
         <Tabs defaultValue="replay" className="w-full">
           <TabsList className="w-full justify-start bg-card border-b border-border rounded-none p-0 h-auto flex-wrap">

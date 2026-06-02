@@ -151,7 +151,9 @@ router.get("/flights/:id/points", async (req, res): Promise<void> => {
     .where(eq(flightPointsTable.flightId, params.data.id))
     .orderBy(flightPointsTable.id);
 
-  res.json(GetFlightPointsResponse.parse(points));
+  // Skip Zod re-validation on read path — data came from our own DB,
+  // and for large flights (5000+ points) parse() adds 2-3s of CPU overhead.
+  res.json(points);
 });
 
 export default router;
