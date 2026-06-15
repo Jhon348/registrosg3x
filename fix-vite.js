@@ -1,4 +1,5 @@
-import { defineConfig } from "vite";
+const fs = require('fs');
+const content = `import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
@@ -25,3 +26,6 @@ export default defineConfig({
     },
   },
 });
+`;
+fs.writeFileSync('artifacts/foqa-dashboard/vite.config.ts', content);
+console.log('vite.config.ts actualizado correctamente');
